@@ -121,18 +121,30 @@ fun MiniPlayerBar(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    Text(
-                        text = " • ",
-                        color = GalaxyTextMuted,
-                        fontSize = 11.sp
-                    )
-                    Text(
-                        text = playerState.formattedDataUsage,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = GalaxyElectricBlue,
+                    val sleepSec = playerState.sleepTimerRemainingSeconds
+                    if (sleepSec != null && sleepSec > 0) {
+                        Text(
+                            text = " • ⏳ ${(sleepSec + 59) / 60}m",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = GalaxyCyan,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    } else {
+                        Text(
+                            text = " • ",
+                            color = GalaxyTextMuted,
                             fontSize = 11.sp
                         )
-                    )
+                        Text(
+                            text = playerState.formattedDataUsage,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = GalaxyElectricBlue,
+                                fontSize = 11.sp
+                            )
+                        )
+                    }
                 }
             }
 

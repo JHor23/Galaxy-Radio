@@ -5,10 +5,14 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
+import androidx.media.app.NotificationCompat.MediaStyle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -39,6 +43,7 @@ class RadioPlaybackService : Service() {
     private var statsJob: Job? = null
 
     private var player: ExoPlayer? = null
+    private var mediaSession: MediaSessionCompat? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     private var currentUrl: String = ""
@@ -53,7 +58,30 @@ class RadioPlaybackService : Service() {
         super.onCreate()
         val powerManager = getSystemService(POWER_SERVICE) as? PowerManager
         wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GalaxyRadio:WakeLock")
+
+        initializeMediaSession()
         initializePlayer()
+    }
+
+    private fun initializeMediaSession() {
+        mediaSession = MediaSessionCompat(this, "GalaxyRadioMediaSession").apply {
+            isActive = true
+            setCallback(object : MediaSessionCompat.Callback() {
+                override fun onPlay() {
+                    player?.play()
+                }
+
+                override fun onPause() {
+                    player?.pause()
+                }
+
+                override fun onStop() {
+                    stopPlayback()
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            })
+        }
     }
 
     private fun initializePlayer() {
@@ -88,11 +116,13 @@ class RadioPlaybackService : Service() {
             when (playbackState) {
                 Player.STATE_BUFFERING -> {
                     RadioPlayerManager.updateStatus(PlayerStatus.BUFFERING)
+                    updateMediaSessionState(PlaybackStateCompat.STATE_BUFFERING)
                     updateNotification()
                 }
                 Player.STATE_READY -> {
                     val isPlaying = player?.isPlaying == true
                     RadioPlayerManager.updateStatus(if (isPlaying) PlayerStatus.PLAYING else PlayerStatus.PAUSED)
+                    updateMediaSessionState(if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED)
                     player?.audioSessionId?.let { sessionId ->
                         if (sessionId > 0) RadioPlayerManager.updateAudioSessionId(sessionId)
                     }
@@ -100,6 +130,7 @@ class RadioPlaybackService : Service() {
                 }
                 Player.STATE_ENDED -> {
                     RadioPlayerManager.updateStatus(PlayerStatus.IDLE)
+                    updateMediaSessionState(PlaybackStateCompat.STATE_STOPPED)
                     releaseWakeLock()
                 }
                 Player.STATE_IDLE -> {
@@ -111,11 +142,13 @@ class RadioPlaybackService : Service() {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) {
                 RadioPlayerManager.updateStatus(PlayerStatus.PLAYING)
+                updateMediaSessionState(PlaybackStateCompat.STATE_PLAYING)
                 acquireWakeLock()
                 startStatsTracker()
             } else {
                 if (player?.playbackState != Player.STATE_BUFFERING) {
                     RadioPlayerManager.updateStatus(PlayerStatus.PAUSED)
+                    updateMediaSessionState(PlaybackStateCompat.STATE_PAUSED)
                 }
                 releaseWakeLock()
             }
@@ -125,6 +158,7 @@ class RadioPlaybackService : Service() {
         override fun onPlayerError(error: PlaybackException) {
             val message = error.localizedMessage ?: "Stream connection error"
             RadioPlayerManager.updateStatus(PlayerStatus.ERROR, message)
+            updateMediaSessionState(PlaybackStateCompat.STATE_ERROR)
             releaseWakeLock()
             updateNotification()
         }
@@ -140,6 +174,20 @@ class RadioPlaybackService : Service() {
                 updateNotification()
             }
         }
+    }
+
+    private fun updateMediaSessionState(state: Int) {
+        val actions = PlaybackStateCompat.ACTION_PLAY or
+                PlaybackStateCompat.ACTION_PAUSE or
+                PlaybackStateCompat.ACTION_PLAY_PAUSE or
+                PlaybackStateCompat.ACTION_STOP
+
+        mediaSession?.setPlaybackState(
+            PlaybackStateCompat.Builder()
+                .setActions(actions)
+                .setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 1.0f)
+                .build()
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -228,7 +276,6 @@ class RadioPlaybackService : Service() {
             while (isActive) {
                 if (player?.isPlaying == true) {
                     val elapsedSec = (System.currentTimeMillis() - sessionStartTimeMs) / 1000
-                    // Estimate data rate based on 128kbps = 16 KB/sec
                     val quality = RadioPlayerManager.uiState.value.audioQuality
                     val bytesPerSec = (quality.targetBitrateKbps * 1024) / 8
                     estimatedBytesTransferred += bytesPerSec
@@ -289,13 +336,46 @@ class RadioPlaybackService : Service() {
             currentStationName
         }
 
+        val sleepSec = RadioPlayerManager.uiState.value.sleepTimerRemainingSeconds
+        val sleepNotice = if (sleepSec != null && sleepSec > 0) {
+            val min = (sleepSec + 59) / 60
+            " • ⏳ Sleep in ${min}m"
+        } else ""
+
+        val subText = if (sleepSec != null && sleepSec > 0) {
+            val min = (sleepSec + 59) / 60
+            "Mini Player • Sleep ${min}m"
+        } else {
+            "Mini Player • Live Stream"
+        }
+
+        val largeIconBitmap = try {
+            BitmapFactory.decodeResource(resources, R.drawable.galaxy_radio_icon)
+        } catch (_: Exception) {
+            null
+        }
+
+        val mediaStyle = MediaStyle()
+            .setMediaSession(mediaSession?.sessionToken)
+            .setShowActionsInCompactView(0, 1) // Action 0: Play/Pause, Action 1: Stop
+            .setShowCancelButton(true)
+            .setCancelButtonIntent(stopActionIntent)
+
         return NotificationCompat.Builder(this, GalaxyRadioApplication.CHANNEL_ID)
             .setSmallIcon(R.drawable.galaxy_radio_icon)
+            .apply {
+                if (largeIconBitmap != null) {
+                    setLargeIcon(largeIconBitmap)
+                }
+            }
             .setContentTitle(title)
-            .setContentText(subtitle)
-            .setSubText("Live Radio")
+            .setContentText("$subtitle$sleepNotice")
+            .setSubText(subText)
             .setContentIntent(contentIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setColor(0xFF00F2FE.toInt()) // Cyan accent color
+            .setColorized(true)
             .setOngoing(isPlaying)
             .addAction(
                 if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
@@ -307,12 +387,7 @@ class RadioPlaybackService : Service() {
                 "Stop",
                 stopActionIntent
             )
-            .setStyle(
-                NotificationCompat.BigTextStyle()
-                    .bigText(subtitle)
-                    .setBigContentTitle(title)
-                    .setSummaryText("Galaxy Radio")
-            )
+            .setStyle(mediaStyle)
             .build()
     }
 
@@ -321,6 +396,7 @@ class RadioPlaybackService : Service() {
         statsJob?.cancel()
         player?.stop()
         player?.clearMediaItems()
+        updateMediaSessionState(PlaybackStateCompat.STATE_STOPPED)
         releaseWakeLock()
     }
 
@@ -341,6 +417,8 @@ class RadioPlaybackService : Service() {
         player?.removeListener(playerListener)
         player?.release()
         player = null
+        mediaSession?.release()
+        mediaSession = null
         serviceScope.cancel()
         super.onDestroy()
     }

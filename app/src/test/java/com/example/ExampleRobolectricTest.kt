@@ -44,4 +44,29 @@ class ExampleRobolectricTest {
     assertTrue(EqPresetType.values().isNotEmpty())
     assertEquals("Cosmic Flat", EqPresetType.FLAT.displayName)
   }
+
+  @Test
+  fun `verify sleep timer formatting`() {
+    val state = com.example.sleep.SleepTimerState(
+      isActive = true,
+      selectedMinutes = 30,
+      remainingSeconds = 125L
+    )
+    assertEquals("02:05", state.formattedRemaining)
+    assertEquals("3m", state.displayShort)
+  }
+
+  @Test
+  fun `verify playlist url extraction`() {
+    val pls = """
+      [playlist]
+      NumberOfEntries=1
+      File1=http://stream.somafm.com:80/spacestation-128-mp3
+      Title1=Space Station Soma
+      Length1=-1
+    """.trimIndent()
+    val matcher = java.util.regex.Pattern.compile("File\\d+\\s*=\\s*(https?://\\S+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(pls)
+    assertTrue(matcher.find())
+    assertEquals("http://stream.somafm.com:80/spacestation-128-mp3", matcher.group(1))
+  }
 }

@@ -28,6 +28,7 @@ data class PlayerUiState(
     val audioSessionId: Int = 0,
     val bytesStreamed: Long = 0L,
     val streamDurationSeconds: Long = 0L,
+    val sleepTimerRemainingSeconds: Long? = null,
     val errorMessage: String? = null
 ) {
     val isPlaying: Boolean
@@ -150,6 +151,12 @@ object RadioPlayerManager {
                 bytesStreamed = bytes,
                 streamDurationSeconds = durationSec
             )
+        }
+    }
+
+    internal fun updateSleepTimer(seconds: Long?) {
+        _uiState.update {
+            it.copy(sleepTimerRemainingSeconds = seconds)
         }
     }
 

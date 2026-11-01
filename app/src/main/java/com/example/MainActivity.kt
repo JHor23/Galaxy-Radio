@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Radio
@@ -79,6 +80,7 @@ import com.example.ui.components.AddStationBottomSheet
 import com.example.ui.components.FullscreenPlayerModal
 import com.example.ui.components.GalaxyStarfield
 import com.example.ui.components.MiniPlayerBar
+import com.example.ui.components.SleepTimerDialog
 import com.example.ui.screens.EqualizerScreen
 import com.example.ui.screens.ExploreScreen
 import com.example.ui.screens.QualityDataScreen
@@ -143,6 +145,7 @@ fun RadioAppMain(
     var currentTab by remember { mutableIntStateOf(0) }
     var isPlayerModalOpen by remember { mutableStateOf(false) }
     var isAddStationSheetOpen by remember { mutableStateOf(false) }
+    var isSleepTimerDialogOpen by remember { mutableStateOf(false) }
 
     // Request notification permission for Android 13+ background playback controls
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -175,9 +178,10 @@ fun RadioAppMain(
         NavItem("Quality", Icons.Filled.Speed, Icons.Outlined.Speed, "nav_quality")
     )
 
-    // BackHandler to close player modal or sheet before exiting
-    BackHandler(enabled = isPlayerModalOpen || isAddStationSheetOpen || currentTab != 0) {
+    // BackHandler to close player modal, sheet, or dialog before exiting
+    BackHandler(enabled = isSleepTimerDialogOpen || isPlayerModalOpen || isAddStationSheetOpen || currentTab != 0) {
         when {
+            isSleepTimerDialogOpen -> isSleepTimerDialogOpen = false
             isPlayerModalOpen -> isPlayerModalOpen = false
             isAddStationSheetOpen -> isAddStationSheetOpen = false
             currentTab != 0 -> currentTab = 0
@@ -197,7 +201,8 @@ fun RadioAppMain(
                 GalaxyTopBar(
                     playerState = playerState,
                     onOpenAddStation = { isAddStationSheetOpen = true },
-                    onOpenPlayer = { if (playerState.currentStation != null) isPlayerModalOpen = true }
+                    onOpenPlayer = { if (playerState.currentStation != null) isPlayerModalOpen = true },
+                    onOpenSleepTimer = { isSleepTimerDialogOpen = true }
                 )
             },
             bottomBar = {
@@ -347,7 +352,17 @@ fun RadioAppMain(
                 onNavigateToQuality = {
                     isPlayerModalOpen = false
                     currentTab = 3
+                },
+                onOpenSleepTimer = {
+                    isSleepTimerDialogOpen = true
                 }
+            )
+        }
+
+        // Sleep Timer Dialog
+        if (isSleepTimerDialogOpen) {
+            SleepTimerDialog(
+                onDismiss = { isSleepTimerDialogOpen = false }
             )
         }
     }
@@ -357,7 +372,8 @@ fun RadioAppMain(
 fun GalaxyTopBar(
     playerState: PlayerUiState,
     onOpenAddStation: () -> Unit,
-    onOpenPlayer: () -> Unit
+    onOpenPlayer: () -> Unit,
+    onOpenSleepTimer: () -> Unit
 ) {
     Surface(
         color = GalaxyDeep.copy(alpha = 0.95f),
@@ -422,6 +438,61 @@ fun GalaxyTopBar(
 
             // Top Actions
             Row(verticalAlignment = Alignment.CenterVertically) {
+                val sleepSec = playerState.sleepTimerRemainingSeconds
+                if (sleepSec != null && sleepSec > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = GalaxyCyan.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, GalaxyCyan),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(onClick = onOpenSleepTimer)
+                            .padding(end = 8.dp)
+                            .testTag("top_bar_sleep_timer_active")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Bedtime,
+                                contentDescription = null,
+                                tint = GalaxyCyan,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${(sleepSec + 59) / 60}m",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GalaxyCyan
+                            )
+                        }
+                    }
+                } else {
+                    Surface(
+                        shape = CircleShape,
+                        color = GalaxySurface,
+                        border = BorderStroke(1.dp, GalaxyCardBorder),
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onOpenSleepTimer)
+                            .padding(end = 0.dp)
+                            .testTag("top_bar_sleep_timer")
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Filled.Bedtime,
+                                contentDescription = "Sleep Timer",
+                                tint = GalaxyTextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+
                 if (playerState.isPlaying) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),

@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
@@ -77,6 +78,7 @@ fun FullscreenPlayerModal(
     onToggleFavorite: () -> Unit,
     onNavigateToEqualizer: () -> Unit,
     onNavigateToQuality: () -> Unit,
+    onOpenSleepTimer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val station = playerState.currentStation ?: return
@@ -142,16 +144,31 @@ fun FullscreenPlayerModal(
                     }
                 }
 
-                IconButton(
-                    onClick = onToggleFavorite,
-                    modifier = Modifier.testTag("fullscreen_favorite_toggle")
-                ) {
-                    Icon(
-                        imageVector = if (station.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                        contentDescription = "Favorite",
-                        tint = if (station.isFavorite) GalaxyCyan else GalaxyTextMuted,
-                        modifier = Modifier.size(24.dp)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val sleepSec = playerState.sleepTimerRemainingSeconds
+                    IconButton(
+                        onClick = onOpenSleepTimer,
+                        modifier = Modifier.testTag("fullscreen_sleep_timer_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Bedtime,
+                            contentDescription = "Sleep Timer",
+                            tint = if (sleepSec != null && sleepSec > 0) GalaxyCyan else GalaxyTextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onToggleFavorite,
+                        modifier = Modifier.testTag("fullscreen_favorite_toggle")
+                    ) {
+                        Icon(
+                            imageVector = if (station.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = "Favorite",
+                            tint = if (station.isFavorite) GalaxyCyan else GalaxyTextMuted,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
 
@@ -381,7 +398,7 @@ fun FullscreenPlayerModal(
             // Quick Jump Action Cards
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
@@ -392,9 +409,9 @@ fun FullscreenPlayerModal(
                         .clip(RoundedCornerShape(12.dp))
                         .clickable(onClick = onNavigateToEqualizer)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Equalizer,
@@ -402,12 +419,48 @@ fun FullscreenPlayerModal(
                             tint = GalaxyCyan,
                             modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Sound Equalizer",
-                            fontSize = 12.sp,
+                            text = "Equalizer",
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
                             color = GalaxyTextPrimary
+                        )
+                    }
+                }
+
+                val sleepSec = playerState.sleepTimerRemainingSeconds
+                val sleepLabel = if (sleepSec != null && sleepSec > 0) {
+                    "${(sleepSec + 59) / 60}m Left"
+                } else {
+                    "Sleep Timer"
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (sleepSec != null && sleepSec > 0) GalaxyCyan.copy(alpha = 0.15f) else GalaxySurface,
+                    border = BorderStroke(1.dp, if (sleepSec != null && sleepSec > 0) GalaxyCyan else GalaxyCardBorder),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(onClick = onOpenSleepTimer)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Bedtime,
+                            contentDescription = null,
+                            tint = if (sleepSec != null && sleepSec > 0) GalaxyCyan else GalaxyViolet,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = sleepLabel,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (sleepSec != null && sleepSec > 0) GalaxyCyan else GalaxyTextPrimary
                         )
                     }
                 }
@@ -421,9 +474,9 @@ fun FullscreenPlayerModal(
                         .clip(RoundedCornerShape(12.dp))
                         .clickable(onClick = onNavigateToQuality)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Icon(
                             imageVector = Icons.Filled.NetworkCheck,
@@ -431,10 +484,10 @@ fun FullscreenPlayerModal(
                             tint = GalaxyElectricBlue,
                             modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Quality & Data",
-                            fontSize = 12.sp,
+                            text = "Quality",
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
                             color = GalaxyTextPrimary
                         )

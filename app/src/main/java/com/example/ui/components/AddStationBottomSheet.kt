@@ -148,7 +148,7 @@ fun AddStationBottomSheet(
             }
 
             Text(
-                text = "Enter any direct MP3, AAC, or Icecast/Shoutcast streaming link",
+                text = "Enter any direct stream, station website, player page, or playlist link (.pls, .m3u, .m3u8). The crawler will aggressively locate and extract the audio feed.",
                 fontSize = 13.sp,
                 color = GalaxyTextSecondary,
                 modifier = Modifier.padding(top = 4.dp, bottom = 18.dp)
@@ -163,8 +163,8 @@ fun AddStationBottomSheet(
                     isTestSuccess = null
                     validationError = null
                 },
-                label = { Text("Direct Streaming URL") },
-                placeholder = { Text("https://example.com/stream.mp3") },
+                label = { Text("Stream URL or Station Webpage") },
+                placeholder = { Text("https://example.com/radio or https://station.fm/listen.pls") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Filled.Link,
@@ -199,7 +199,7 @@ fun AddStationBottomSheet(
                 OutlinedButton(
                     onClick = {
                         if (streamUrl.isBlank()) {
-                            validationError = "Please enter a stream URL first"
+                            validationError = "Please enter a station URL first"
                             return@OutlinedButton
                         }
                         isTesting = true
@@ -210,13 +210,21 @@ fun AddStationBottomSheet(
                             isTesting = false
                             result.onSuccess { data ->
                                 isTestSuccess = true
-                                testResultText = "Connected! Station: ${data.stationName} (${data.bitrate} kbps)"
+                                streamUrl = data.resolvedStreamUrl
+                                if (data.isCrawledFromWebpage) {
+                                    testResultText = "Audio feed crawled from page! ${data.stationName} (${data.bitrate} kbps)"
+                                } else {
+                                    testResultText = "Direct stream verified: ${data.stationName} (${data.bitrate} kbps)"
+                                }
                                 if (name.isBlank() && data.stationName.isNotBlank() && data.stationName != "Online Radio") {
                                     name = data.stationName
                                 }
+                                if (data.bitrate > 0) {
+                                    selectedBitrate = data.bitrate
+                                }
                             }.onFailure { err ->
                                 isTestSuccess = false
-                                testResultText = "Test failed: ${err.message ?: "Could not reach stream"}"
+                                testResultText = "No audio stream found: ${err.message ?: "Could not locate live feed"}"
                             }
                         }
                     },
@@ -232,6 +240,7 @@ fun AddStationBottomSheet(
                             color = GalaxyCyan
                         )
                         Spacer(modifier = Modifier.width(8.dp))
+                        Text("Crawling Audio...", fontSize = 13.sp)
                     } else {
                         Icon(
                             imageVector = Icons.Filled.NetworkCheck,
@@ -239,8 +248,8 @@ fun AddStationBottomSheet(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
+                        Text("Crawl & Test Feed", fontSize = 13.sp)
                     }
-                    Text("Test Connection", fontSize = 13.sp)
                 }
 
                 // Example URL autofill helper

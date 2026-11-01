@@ -218,17 +218,42 @@ class RadioStationRepository(
         streamUrl: String,
         genre: String,
         bitrate: Int = 128,
-        country: String = "Custom"
+        country: String = "Custom",
+        faviconUrl: String? = null
     ): RadioStation = withContext(Dispatchers.IO) {
+        var finalUrl = streamUrl.trim()
+        var finalName = name.trim()
+        var finalGenre = genre.trim().ifBlank { "Custom" }
+        var finalBitrate = if (bitrate > 0) bitrate else 128
+        var finalFavicon = faviconUrl
+
+        // Aggressively crawl and resolve real stream if given a webpage or playlist
+        val crawled = com.example.data.crawler.AudioStreamCrawler.crawlForAudioFeed(finalUrl).getOrNull()
+        if (crawled != null) {
+            finalUrl = crawled.resolvedStreamUrl
+            if (finalName.isBlank() || finalName == "Custom Station") {
+                finalName = crawled.stationName
+            }
+            if (finalGenre == "Custom" && crawled.genre.isNotBlank() && crawled.genre != "Online Radio") {
+                finalGenre = crawled.genre
+            }
+            if (finalBitrate == 128 && crawled.bitrate > 0) {
+                finalBitrate = crawled.bitrate
+            }
+            if (finalFavicon == null && !crawled.faviconUrl.isNullOrBlank()) {
+                finalFavicon = crawled.faviconUrl
+            }
+        }
+
         val newStation = RadioStation(
             id = "custom_" + UUID.randomUUID().toString(),
-            name = name.trim(),
-            streamUrl = streamUrl.trim(),
-            genre = genre.trim().ifBlank { "Custom" },
-            bitrate = if (bitrate > 0) bitrate else 128,
-            codec = if (streamUrl.contains(".aac", ignoreCase = true)) "AAC" else "MP3",
+            name = finalName.ifBlank { "Custom Station" },
+            streamUrl = finalUrl,
+            genre = finalGenre,
+            bitrate = finalBitrate,
+            codec = if (finalUrl.contains(".aac", ignoreCase = true)) "AAC" else "MP3",
             country = country.trim().ifBlank { "Custom" },
-            faviconUrl = null,
+            faviconUrl = finalFavicon,
             isCustom = true,
             isFavorite = false
         )
@@ -246,62 +271,32 @@ class RadioStationRepository(
     }
 
     /**
-     * Test connection to a custom radio stream URL before saving.
-     * Checks HTTP response, content type, and headers.
+     * Aggressively crawl and test connection to any radio streaming URL or webpage.
      */
     suspend fun testStreamConnection(url: String): Result<StreamTestResult> = withContext(Dispatchers.IO) {
-        try {
-            val trimmedUrl = url.trim()
-            if (!trimmedUrl.startsWith("http://") && !trimmedUrl.startsWith("https://")) {
-                return@withContext Result.failure(IllegalArgumentException("URL must start with http:// or https://"))
-            }
-
-            val request = Request.Builder()
-                .url(trimmedUrl)
-                .addHeader("Icy-MetaData", "1")
-                .addHeader("User-Agent", "GalaxyRadioApp/1.0")
-                .head() // try HEAD first
-                .build()
-
-            var response = try { client.newCall(request).execute() } catch (_: Exception) { null }
-
-            // If HEAD is not supported by Icecast/Shoutcast, test with GET range
-            if (response == null || !response.isSuccessful) {
-                val getRequest = Request.Builder()
-                    .url(trimmedUrl)
-                    .addHeader("Icy-MetaData", "1")
-                    .addHeader("Range", "bytes=0-1024")
-                    .get()
-                    .build()
-                response = client.newCall(getRequest).execute()
-            }
-
-            val icyName = response.header("icy-name") ?: response.header("Server") ?: "Online Radio"
-            val icyGenre = response.header("icy-genre") ?: "Radio"
-            val icyBr = response.header("icy-br")?.toIntOrNull() ?: 128
-            val contentType = response.header("Content-Type") ?: "audio/mpeg"
-
-            response.close()
-
-            Result.success(
-                StreamTestResult(
-                    isSuccess = true,
-                    stationName = icyName,
-                    genre = icyGenre,
-                    bitrate = icyBr,
-                    contentType = contentType
-                )
+        val crawlResult = com.example.data.crawler.AudioStreamCrawler.crawlForAudioFeed(url)
+        crawlResult.map { crawled ->
+            StreamTestResult(
+                isSuccess = true,
+                resolvedStreamUrl = crawled.resolvedStreamUrl,
+                stationName = crawled.stationName,
+                genre = crawled.genre,
+                bitrate = crawled.bitrate,
+                contentType = crawled.contentType,
+                faviconUrl = crawled.faviconUrl,
+                isCrawledFromWebpage = crawled.isFromWebpage
             )
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 }
 
 data class StreamTestResult(
     val isSuccess: Boolean,
+    val resolvedStreamUrl: String,
     val stationName: String,
     val genre: String,
     val bitrate: Int,
-    val contentType: String
+    val contentType: String,
+    val faviconUrl: String? = null,
+    val isCrawledFromWebpage: Boolean = false
 )
