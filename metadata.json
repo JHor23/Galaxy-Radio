@@ -1,0 +1,6 @@
+{
+  "name": "Galaxy Radio",
+  "description": "Minimalist dark galaxy radio streaming app with real-time metadata, equalizer presets, seamless background playback, and custom station entry.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
