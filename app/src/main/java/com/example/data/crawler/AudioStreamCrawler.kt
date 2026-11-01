@@ -5,7 +5,6 @@ import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Response
 import java.net.URI
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
@@ -23,14 +22,14 @@ data class CrawledAudioStream(
 object AudioStreamCrawler {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(12, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
 
     private const val USER_AGENT =
-        "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 GalaxyRadio/2.0"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 GalaxyRadio/2.0"
 
     suspend fun crawlForAudioFeed(rawUrl: String): Result<CrawledAudioStream> = withContext(Dispatchers.IO) {
         val trimmedUrl = rawUrl.trim()
@@ -91,34 +90,65 @@ object AudioStreamCrawler {
     )
 
     private fun probeUrl(url: String): ProbeResult? {
-        try {
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("Icy-MetaData", "1")
-                .addHeader("User-Agent", USER_AGENT)
-                .addHeader("Range", "bytes=0-2048")
-                .get()
-                .build()
+        var currentUrl = url
+        var redirects = 0
 
-            val response = client.newCall(request).execute()
-            val finalUrl = response.request.url.toString()
-            val contentType = response.header("Content-Type")?.lowercase() ?: ""
-            val icyName = response.header("icy-name")
-            val icyGenre = response.header("icy-genre")
-            val icyBr = response.header("icy-br")?.toIntOrNull()
+        while (redirects < 6) {
+            try {
+                val request = Request.Builder()
+                    .url(currentUrl)
+                    .addHeader("Icy-MetaData", "1")
+                    .addHeader("User-Agent", USER_AGENT)
+                    .addHeader("Range", "bytes=0-2048")
+                    .addHeader("Accept", "*/*")
+                    .get()
+                    .build()
 
-            response.close()
+                val response = client.newCall(request).execute()
+                val code = response.code
 
-            return ProbeResult(
-                finalUrl = finalUrl,
-                contentType = contentType,
-                icyName = icyName,
-                icyGenre = icyGenre,
-                icyBitrate = icyBr
-            )
-        } catch (_: Exception) {
-            return null
+                // Handle manual cross-protocol redirects (HTTPS -> HTTP or HTTP -> HTTPS)
+                if (code in 300..399) {
+                    val location = response.header("Location")
+                    response.close()
+                    if (!location.isNullOrBlank()) {
+                        currentUrl = resolveUrl(currentUrl, location)
+                        redirects++
+                        continue
+                    }
+                }
+
+                val finalUrl = response.request.url.toString()
+                val contentType = response.header("Content-Type")?.lowercase() ?: ""
+                val icyName = response.header("icy-name")
+                val icyGenre = response.header("icy-genre")
+                val icyBr = response.header("icy-br")?.toIntOrNull()
+
+                response.close()
+
+                if (isAudioResponse(contentType, icyName)) {
+                    return ProbeResult(
+                        finalUrl = currentUrl,
+                        contentType = contentType,
+                        icyName = icyName,
+                        icyGenre = icyGenre,
+                        icyBitrate = icyBr
+                    )
+                } else if (code == 200) {
+                    return ProbeResult(
+                        finalUrl = finalUrl,
+                        contentType = contentType,
+                        icyName = icyName,
+                        icyGenre = icyGenre,
+                        icyBitrate = icyBr
+                    )
+                }
+                return null
+            } catch (_: Exception) {
+                return null
+            }
         }
+        return null
     }
 
     private fun isAudioResponse(contentType: String, icyName: String?): Boolean {
@@ -156,7 +186,6 @@ object AudioStreamCrawler {
                 return null
             }
 
-            // Extract candidate URLs from playlist text
             val extractedUrls = extractUrlsFromPlaylist(body, url)
             for (candidate in extractedUrls) {
                 val probe = probeUrl(candidate)
@@ -179,13 +208,11 @@ object AudioStreamCrawler {
     private fun extractUrlsFromPlaylist(body: String, baseUrl: String): List<String> {
         val urls = mutableListOf<String>()
 
-        // 1. PLS format: File1=http://...
         val plsMatcher = Pattern.compile("File\\d+\\s*=\\s*(https?://\\S+)", Pattern.CASE_INSENSITIVE).matcher(body)
         while (plsMatcher.find()) {
             plsMatcher.group(1)?.let { urls.add(it.trim()) }
         }
 
-        // 2. M3U format: lines starting with http://
         body.lines().forEach { line ->
             val trimmed = line.trim()
             if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
@@ -193,7 +220,6 @@ object AudioStreamCrawler {
             }
         }
 
-        // 3. XML ASX / XSPF format
         val xmlMatcher = Pattern.compile("<(?:ref\\s+href|location)>[\"']?(https?://[^\"'<>\\s]+)[\"']?</", Pattern.CASE_INSENSITIVE).matcher(body)
         while (xmlMatcher.find()) {
             xmlMatcher.group(1)?.let { urls.add(it.trim()) }
@@ -219,29 +245,41 @@ object AudioStreamCrawler {
         }
     }
 
-    private fun crawlHtmlForStreams(baseUrl: String, html: String): CrawledAudioStream? {
-        val stationTitle = extractHtmlTitle(html) ?: "Online Radio"
-        val faviconUrl = extractHtmlFavicon(html, baseUrl)
+    private fun crawlHtmlForStreams(baseUrl: String, rawHtml: String): CrawledAudioStream? {
+        val unescapedHtml = rawHtml
+            .replace("\\/", "/")
+            .replace("\\\"", "\"")
+            .replace("\\u002F", "/")
+            .replace("&amp;", "&")
+
+        val stationTitle = extractHtmlTitle(unescapedHtml) ?: "Online Radio"
+        val faviconUrl = extractHtmlFavicon(unescapedHtml, baseUrl)
 
         val candidateUrls = mutableListOf<String>()
 
+        // Specific Wix / JSON player stream keys (e.g. Happy Radio audioStreamLink)
+        val wixStreamMatcher = Pattern.compile("[\"'](?:audioStreamLink|audioUrl|streamUrl|streamURL|liveStream)[\"']\\s*:\\s*[\"'](https?://[^\"'\\s]+)[\"']", Pattern.CASE_INSENSITIVE).matcher(unescapedHtml)
+        while (wixStreamMatcher.find()) {
+            wixStreamMatcher.group(1)?.let { candidateUrls.add(resolveUrl(baseUrl, it)) }
+        }
+
         // Pattern A: HTML5 audio/source elements
         val mediaPattern = Pattern.compile("<(?:audio|source|video)[^>]+src=[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE)
-        val mediaMatcher = mediaPattern.matcher(html)
+        val mediaMatcher = mediaPattern.matcher(unescapedHtml)
         while (mediaMatcher.find()) {
             mediaMatcher.group(1)?.let { candidateUrls.add(resolveUrl(baseUrl, it)) }
         }
 
         // Pattern B: JavaScript streaming player configs (streamUrl, file, audio, etc.)
         val jsPatterns = listOf(
-            Pattern.compile("[\"']?(?:stream(?:Url|URL|Source)?|audioUrl|stream)[\"']?\\s*[:=]\\s*[\"'](https?://[^\"'\\s]+)[\"']", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("[\"']?(?:stream(?:Url|URL|Source)?|audioUrl|audio_url|stream)[\"']?\\s*[:=]\\s*[\"'](https?://[^\"'\\s]+)[\"']", Pattern.CASE_INSENSITIVE),
             Pattern.compile("[\"']?(?:file|src|url|source)[\"']?\\s*[:=]\\s*[\"'](https?://[^\"'\\s]+\\.(?:mp3|aac|ogg|m3u8|m3u|pls)[^\"'\\s]*)[\"']", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("[\"'](https?://[^\"'\\s]*(?:icecast|shoutcast|zeno\\.fm|radio\\.co|stream|listen|live)[^\"'\\s]*)[\"']", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("[\"'](https?://[^\"'\\s]*(?:icecast|shoutcast|zeno\\.fm|surfernetwork\\.com|radio\\.co|stream|listen|live)[^\"'\\s]*)[\"']", Pattern.CASE_INSENSITIVE),
             Pattern.compile("[\"'](https?://[^\"'\\s]*:(?:8000|8002|8004|8006|8080|8443|8888)/[^\"'\\s]*)[\"']", Pattern.CASE_INSENSITIVE)
         )
 
         for (pattern in jsPatterns) {
-            val matcher = pattern.matcher(html)
+            val matcher = pattern.matcher(unescapedHtml)
             while (matcher.find()) {
                 matcher.group(1)?.let {
                     val resolved = resolveUrl(baseUrl, it)
@@ -254,7 +292,7 @@ object AudioStreamCrawler {
 
         // Pattern C: Embedded iFrame player src
         val iframePattern = Pattern.compile("<iframe[^>]+src=[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE)
-        val iframeMatcher = iframePattern.matcher(html)
+        val iframeMatcher = iframePattern.matcher(unescapedHtml)
         val iframeUrls = mutableListOf<String>()
         while (iframeMatcher.find()) {
             iframeMatcher.group(1)?.let { iframeUrls.add(resolveUrl(baseUrl, it)) }
@@ -262,7 +300,7 @@ object AudioStreamCrawler {
 
         // Pattern D: Anchor links to streams or playlists
         val linkPattern = Pattern.compile("<a[^>]+href=[\"']([^\"']+\\.(?:mp3|aac|m3u8|m3u|pls|ogg))[\"']", Pattern.CASE_INSENSITIVE)
-        val linkMatcher = linkPattern.matcher(html)
+        val linkMatcher = linkPattern.matcher(unescapedHtml)
         while (linkMatcher.find()) {
             linkMatcher.group(1)?.let { candidateUrls.add(resolveUrl(baseUrl, it)) }
         }
@@ -274,7 +312,6 @@ object AudioStreamCrawler {
 
         // Test each candidate
         for (candidate in rankedCandidates) {
-            // If it's a playlist, parse it
             if (candidate.endsWith(".pls") || candidate.endsWith(".m3u")) {
                 val plStream = tryParsePlaylist(candidate)
                 if (plStream != null) {
@@ -291,7 +328,7 @@ object AudioStreamCrawler {
                 return CrawledAudioStream(
                     resolvedStreamUrl = probe.finalUrl,
                     stationName = if (!probe.icyName.isNullOrBlank()) probe.icyName else stationTitle,
-                    genre = probe.icyGenre ?: "Online Radio",
+                    genre = probe.icyGenre ?: "Pop / Hits",
                     bitrate = probe.icyBitrate ?: 128,
                     faviconUrl = faviconUrl,
                     isFromWebpage = true,

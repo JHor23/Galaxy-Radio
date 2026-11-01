@@ -19,12 +19,15 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.example.GalaxyRadioApplication
 import com.example.MainActivity
 import com.example.R
 import com.example.audio.IcyMetadataReader
+import com.example.data.crawler.AudioStreamCrawler
 import com.example.player.PlayerStatus
 import com.example.player.RadioPlayerManager
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +42,7 @@ import kotlinx.coroutines.launch
 class RadioPlaybackService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var streamPrepareJob: Job? = null
     private var metadataJob: Job? = null
     private var statsJob: Job? = null
 
@@ -64,24 +68,26 @@ class RadioPlaybackService : Service() {
     }
 
     private fun initializeMediaSession() {
-        mediaSession = MediaSessionCompat(this, "GalaxyRadioMediaSession").apply {
-            isActive = true
-            setCallback(object : MediaSessionCompat.Callback() {
-                override fun onPlay() {
-                    player?.play()
-                }
+        try {
+            mediaSession = MediaSessionCompat(this, "GalaxyRadioMediaSession").apply {
+                isActive = true
+                setCallback(object : MediaSessionCompat.Callback() {
+                    override fun onPlay() {
+                        player?.play()
+                    }
 
-                override fun onPause() {
-                    player?.pause()
-                }
+                    override fun onPause() {
+                        player?.pause()
+                    }
 
-                override fun onStop() {
-                    stopPlayback()
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
-                }
-            })
-        }
+                    override fun onStop() {
+                        stopPlayback()
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf()
+                    }
+                })
+            }
+        } catch (_: Exception) {}
     }
 
     private fun initializePlayer() {
@@ -101,7 +107,17 @@ class RadioPlaybackService : Service() {
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
 
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 GalaxyRadio/2.0")
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(15_000)
+
+        val mediaSourceFactory = DefaultMediaSourceFactory(this)
+            .setDataSourceFactory(httpDataSourceFactory)
+
         player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(loadControl)
             .setAudioAttributes(audioAttributes, true) // handle audio focus
             .setHandleAudioBecomingNoisy(true)
@@ -157,10 +173,35 @@ class RadioPlaybackService : Service() {
 
         override fun onPlayerError(error: PlaybackException) {
             val message = error.localizedMessage ?: "Stream connection error"
-            RadioPlayerManager.updateStatus(PlayerStatus.ERROR, message)
-            updateMediaSessionState(PlaybackStateCompat.STATE_ERROR)
-            releaseWakeLock()
-            updateNotification()
+            val failedUrl = currentUrl
+
+            // If the stream failed and wasn't resolved yet, attempt an automatic crawler recovery
+            if (failedUrl.isNotBlank() &&
+                !failedUrl.contains("surfernetwork.com") &&
+                (failedUrl.contains("/player") || failedUrl.contains(".htm") || !failedUrl.endsWith(".mp3"))
+            ) {
+                serviceScope.launch(Dispatchers.IO) {
+                    val crawlResult = AudioStreamCrawler.crawlForAudioFeed(failedUrl)
+                    val crawled = crawlResult.getOrNull()
+                    if (crawled != null && crawled.resolvedStreamUrl != failedUrl) {
+                        launch(Dispatchers.Main) {
+                            startStreaming(crawled.resolvedStreamUrl, crawled.stationName, crawled.genre)
+                        }
+                        return@launch
+                    }
+                    launch(Dispatchers.Main) {
+                        RadioPlayerManager.updateStatus(PlayerStatus.ERROR, message)
+                        updateMediaSessionState(PlaybackStateCompat.STATE_ERROR)
+                        releaseWakeLock()
+                        updateNotification()
+                    }
+                }
+            } else {
+                RadioPlayerManager.updateStatus(PlayerStatus.ERROR, message)
+                updateMediaSessionState(PlaybackStateCompat.STATE_ERROR)
+                releaseWakeLock()
+                updateNotification()
+            }
         }
 
         override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
@@ -182,15 +223,20 @@ class RadioPlaybackService : Service() {
                 PlaybackStateCompat.ACTION_PLAY_PAUSE or
                 PlaybackStateCompat.ACTION_STOP
 
-        mediaSession?.setPlaybackState(
-            PlaybackStateCompat.Builder()
-                .setActions(actions)
-                .setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 1.0f)
-                .build()
-        )
+        try {
+            mediaSession?.setPlaybackState(
+                PlaybackStateCompat.Builder()
+                    .setActions(actions)
+                    .setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 1.0f)
+                    .build()
+            )
+        } catch (_: Exception) {}
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // ALWAYS satisfy the Android foreground service requirement immediately
+        startForegroundWithNotification()
+
         when (intent?.action) {
             ACTION_PLAY -> {
                 val url = intent.getStringExtra(EXTRA_STREAM_URL).orEmpty()
@@ -223,6 +269,10 @@ class RadioPlaybackService : Service() {
     private fun startStreaming(url: String, name: String, genre: String) {
         if (url.isBlank()) return
 
+        streamPrepareJob?.cancel()
+        metadataJob?.cancel()
+        statsJob?.cancel()
+
         currentUrl = url
         currentStationName = name.ifBlank { "Galaxy Radio" }
         currentGenre = genre.ifBlank { "Live Stream" }
@@ -231,23 +281,66 @@ class RadioPlaybackService : Service() {
         sessionStartTimeMs = System.currentTimeMillis()
 
         initializePlayer()
+        RadioPlayerManager.updateStatus(PlayerStatus.BUFFERING)
+        updateNotification()
 
-        val mediaItem = MediaItem.Builder()
-            .setUri(url)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(currentStationName)
-                    .setArtist(currentGenre)
+        streamPrepareJob = serviceScope.launch {
+            var targetStreamUrl = url
+            var targetName = currentStationName
+            var targetGenre = currentGenre
+
+            // Detect whether the given URL is a player web page or non-direct stream
+            val lower = url.lowercase()
+            val isWebpageOrNeedsResolution = lower.contains("/player") ||
+                    lower.contains(".html") || lower.contains(".htm") || lower.contains(".php") ||
+                    lower.contains("happyradio.fm") || lower.contains("wixsite.com") ||
+                    (!lower.contains(".mp3") && !lower.contains(".aac") && !lower.contains(".ogg") &&
+                     !lower.contains(":8000") && !lower.contains(":8002") && !lower.contains(":8080") &&
+                     !lower.contains("stream") && !lower.contains("icecast") &&
+                     !lower.contains(".m3u") && !lower.contains(".pls"))
+
+            if (isWebpageOrNeedsResolution) {
+                val crawlResult = AudioStreamCrawler.crawlForAudioFeed(url)
+                val crawled = crawlResult.getOrNull()
+                if (crawled != null) {
+                    targetStreamUrl = crawled.resolvedStreamUrl
+                    if (targetName == "Galaxy Radio" || targetName == "Custom Station" || targetName.isBlank()) {
+                        targetName = crawled.stationName
+                    }
+                    if (crawled.genre.isNotBlank() && crawled.genre != "Online Radio") {
+                        targetGenre = crawled.genre
+                    }
+                    currentStationName = targetName
+                    currentGenre = targetGenre
+                    currentUrl = targetStreamUrl
+                    currentTrackTitle = targetName
+                    currentArtist = targetGenre
+                    RadioPlayerManager.updateMetadata(currentTrackTitle, currentArtist)
+                    updateNotification()
+                }
+            }
+
+            try {
+                val mediaItem = MediaItem.Builder()
+                    .setUri(targetStreamUrl)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(currentStationName)
+                            .setArtist(currentGenre)
+                            .build()
+                    )
                     .build()
-            )
-            .build()
 
-        player?.setMediaItem(mediaItem)
-        player?.prepare()
-        player?.play()
+                player?.setMediaItem(mediaItem)
+                player?.prepare()
+                player?.play()
 
-        startForegroundWithNotification()
-        startIcyMetadataPolling()
+                startIcyMetadataPolling()
+            } catch (e: Exception) {
+                RadioPlayerManager.updateStatus(PlayerStatus.ERROR, e.localizedMessage ?: "Failed to start stream")
+                updateMediaSessionState(PlaybackStateCompat.STATE_ERROR)
+            }
+        }
     }
 
     private fun startIcyMetadataPolling() {
@@ -287,21 +380,25 @@ class RadioPlaybackService : Service() {
     }
 
     private fun startForegroundWithNotification() {
-        val notification = buildNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        try {
+            val notification = buildNotification()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (_: Exception) {}
     }
 
     private fun updateNotification() {
-        val manager = getSystemService(NOTIFICATION_SERVICE) as? android.app.NotificationManager
-        manager?.notify(NOTIFICATION_ID, buildNotification())
+        try {
+            val manager = getSystemService(NOTIFICATION_SERVICE) as? android.app.NotificationManager
+            manager?.notify(NOTIFICATION_ID, buildNotification())
+        } catch (_: Exception) {}
     }
 
     private fun buildNotification(): Notification {
@@ -362,7 +459,7 @@ class RadioPlaybackService : Service() {
             .setCancelButtonIntent(stopActionIntent)
 
         return NotificationCompat.Builder(this, GalaxyRadioApplication.CHANNEL_ID)
-            .setSmallIcon(R.drawable.galaxy_radio_icon)
+            .setSmallIcon(R.drawable.ic_radio_notification)
             .apply {
                 if (largeIconBitmap != null) {
                     setLargeIcon(largeIconBitmap)
@@ -392,6 +489,7 @@ class RadioPlaybackService : Service() {
     }
 
     private fun stopPlayback() {
+        streamPrepareJob?.cancel()
         metadataJob?.cancel()
         statsJob?.cancel()
         player?.stop()

@@ -69,4 +69,18 @@ class ExampleRobolectricTest {
     assertTrue(matcher.find())
     assertEquals("http://stream.somafm.com:80/spacestation-128-mp3", matcher.group(1))
   }
+
+  @Test
+  fun `verify wix json audioStreamLink extraction for happyradio`() {
+    val sampleWixHtml = """
+      {"audioStreamLink":"https:\/\/stream.zeno.fm\/nkeaps48xg0uv","station":"Happy Radio"}
+    """.trimIndent()
+    val unescaped = sampleWixHtml.replace("\\/", "/").replace("\\\"", "\"")
+    val matcher = java.util.regex.Pattern.compile(
+      "[\"'](?:audioStreamLink|audioUrl|streamUrl|streamURL|liveStream)[\"']\\s*:\\s*[\"'](https?://[^\"'\\s]+)[\"']",
+      java.util.regex.Pattern.CASE_INSENSITIVE
+    ).matcher(unescaped)
+    assertTrue(matcher.find())
+    assertEquals("https://stream.zeno.fm/nkeaps48xg0uv", matcher.group(1))
+  }
 }
