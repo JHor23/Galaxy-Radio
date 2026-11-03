@@ -1,8 +1,8 @@
-# Galaxy-Radio
+# Galaxy Radio
 
-Galaxy-Radio is an immersive, ad-free cosmic audio streaming browser and station manager designed for global radio exploration and tailored listening experiences. 
+Galaxy Radio is an immersive, ad-free cosmic audio streaming browser and station manager designed for global radio exploration and tailored listening experiences. 
 
-Whether you're tuning into live global broadcasts, managing custom frequency streams, or dialing in your ideal audio profile, Galaxy-Radio optimizes performance, bandwidth consumption, and acoustic output for an elevated mobile experience.
+Whether you're tuning into live global broadcasts, managing custom frequency streams, or dialing in your ideal audio profile, Galaxy Radio optimizes performance, bandwidth consumption, and acoustic output for an elevated mobile experience.
 
 ---
 
