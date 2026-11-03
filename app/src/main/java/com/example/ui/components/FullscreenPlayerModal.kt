@@ -35,7 +35,11 @@ import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -309,34 +313,56 @@ fun FullscreenPlayerModal(
             // Primary Playback Controls
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Stop Action
                 IconButton(
                     onClick = onStop,
                     modifier = Modifier
-                        .size(52.dp)
+                        .size(48.dp)
                         .testTag("fullscreen_stop_button")
                 ) {
                     Surface(
                         shape = CircleShape,
                         color = GalaxySurfaceVariant,
                         border = BorderStroke(1.dp, GalaxyCardBorder),
-                        modifier = Modifier.size(46.dp)
+                        modifier = Modifier.size(42.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Filled.Stop,
                                 contentDescription = "Stop",
                                 tint = GalaxyTextSecondary,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(28.dp))
+                // Previous Station
+                IconButton(
+                    onClick = { com.example.player.RadioPlayerManager.playPrevious(context) },
+                    modifier = Modifier
+                        .size(50.dp)
+                        .testTag("fullscreen_prev_button")
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = GalaxySurfaceVariant,
+                        border = BorderStroke(1.dp, GalaxyCardBorder),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Filled.SkipPrevious,
+                                contentDescription = "Previous Station",
+                                tint = GalaxyTextPrimary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
 
                 // Play / Pause Pulsing Center Button
                 Surface(
@@ -366,29 +392,88 @@ fun FullscreenPlayerModal(
                     }
                 }
 
-                Spacer(modifier = Modifier.width(28.dp))
-
-                // Equalizer Shortcut
+                // Next Station
                 IconButton(
-                    onClick = onNavigateToEqualizer,
+                    onClick = { com.example.player.RadioPlayerManager.playNext(context) },
                     modifier = Modifier
-                        .size(52.dp)
-                        .testTag("fullscreen_eq_shortcut")
+                        .size(50.dp)
+                        .testTag("fullscreen_next_button")
                 ) {
                     Surface(
                         shape = CircleShape,
                         color = GalaxySurfaceVariant,
                         border = BorderStroke(1.dp, GalaxyCardBorder),
-                        modifier = Modifier.size(46.dp)
+                        modifier = Modifier.size(44.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
-                                imageVector = Icons.Filled.Equalizer,
-                                contentDescription = "Equalizer",
-                                tint = GalaxyCyan,
+                                imageVector = Icons.Filled.SkipNext,
+                                contentDescription = "Next Station",
+                                tint = GalaxyTextPrimary,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
+                    }
+                }
+
+                // Mute / Unmute Volume Action
+                IconButton(
+                    onClick = { com.example.player.RadioPlayerManager.toggleMute(context) },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("fullscreen_mute_button")
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = GalaxySurfaceVariant,
+                        border = BorderStroke(1.dp, if (playerState.isMuted) GalaxyCyan else GalaxyCardBorder),
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (playerState.isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                                contentDescription = if (playerState.isMuted) "Unmute" else "Mute",
+                                tint = if (playerState.isMuted) GalaxyCyan else GalaxyTextSecondary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Equalizer Shortcut Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = GalaxySurfaceVariant,
+                    border = BorderStroke(1.dp, GalaxyCardBorder),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable(onClick = onNavigateToEqualizer)
+                        .testTag("fullscreen_eq_shortcut")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Equalizer,
+                            contentDescription = "Equalizer",
+                            tint = GalaxyCyan,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Acoustic Equalizer & DSP",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = GalaxyTextPrimary
+                        )
                     }
                 }
             }

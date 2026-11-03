@@ -108,6 +108,12 @@ fun ExploreScreen(
         }
     }
 
+    LaunchedEffect(stations) {
+        if (stations.isNotEmpty()) {
+            com.example.player.RadioPlayerManager.setStationQueue(stations)
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()

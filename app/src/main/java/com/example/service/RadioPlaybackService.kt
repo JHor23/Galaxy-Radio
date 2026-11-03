@@ -7,12 +7,15 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.BitmapFactory
 import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
 import android.os.PowerManager
+import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import androidx.media.app.NotificationCompat.MediaStyle
+import androidx.media.session.MediaButtonReceiver
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -57,6 +60,7 @@ class RadioPlaybackService : Service() {
     private var currentArtist: String = ""
     private var sessionStartTimeMs: Long = 0L
     private var estimatedBytesTransferred: Long = 0L
+    private var isMuted: Boolean = false
 
     override fun onCreate() {
         super.onCreate()
@@ -70,6 +74,22 @@ class RadioPlaybackService : Service() {
     private fun initializeMediaSession() {
         try {
             mediaSession = MediaSessionCompat(this, "GalaxyRadioMediaSession").apply {
+                setFlags(
+                    MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
+                    MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+                )
+
+                val mediaButtonIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                    setClass(this@RadioPlaybackService, RadioPlaybackService::class.java)
+                }
+                val pendingMediaButton = PendingIntent.getService(
+                    this@RadioPlaybackService,
+                    0,
+                    mediaButtonIntent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+                setMediaButtonReceiver(pendingMediaButton)
+
                 isActive = true
                 setCallback(object : MediaSessionCompat.Callback() {
                     override fun onPlay() {
@@ -84,6 +104,20 @@ class RadioPlaybackService : Service() {
                         stopPlayback()
                         stopForeground(STOP_FOREGROUND_REMOVE)
                         stopSelf()
+                    }
+
+                    override fun onSkipToNext() {
+                        RadioPlayerManager.playNext(this@RadioPlaybackService)
+                    }
+
+                    override fun onSkipToPrevious() {
+                        RadioPlayerManager.playPrevious(this@RadioPlaybackService)
+                    }
+
+                    override fun onCustomAction(action: String?, extras: Bundle?) {
+                        if (action == ACTION_MUTE_TOGGLE) {
+                            toggleMute()
+                        }
                     }
                 })
             }
@@ -124,6 +158,7 @@ class RadioPlaybackService : Service() {
             .build()
             .apply {
                 addListener(playerListener)
+                volume = if (isMuted) 0f else 1f
             }
     }
 
@@ -133,12 +168,14 @@ class RadioPlaybackService : Service() {
                 Player.STATE_BUFFERING -> {
                     RadioPlayerManager.updateStatus(PlayerStatus.BUFFERING)
                     updateMediaSessionState(PlaybackStateCompat.STATE_BUFFERING)
+                    updateMediaSessionMetadata()
                     updateNotification()
                 }
                 Player.STATE_READY -> {
                     val isPlaying = player?.isPlaying == true
                     RadioPlayerManager.updateStatus(if (isPlaying) PlayerStatus.PLAYING else PlayerStatus.PAUSED)
                     updateMediaSessionState(if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED)
+                    updateMediaSessionMetadata()
                     player?.audioSessionId?.let { sessionId ->
                         if (sessionId > 0) RadioPlayerManager.updateAudioSessionId(sessionId)
                     }
@@ -168,6 +205,7 @@ class RadioPlaybackService : Service() {
                 }
                 releaseWakeLock()
             }
+            updateMediaSessionMetadata()
             updateNotification()
         }
 
@@ -212,6 +250,7 @@ class RadioPlaybackService : Service() {
                 currentTrackTitle = title
                 currentArtist = artist ?: currentStationName
                 RadioPlayerManager.updateMetadata(currentTrackTitle, currentArtist)
+                updateMediaSessionMetadata()
                 updateNotification()
             }
         }
@@ -221,21 +260,64 @@ class RadioPlaybackService : Service() {
         val actions = PlaybackStateCompat.ACTION_PLAY or
                 PlaybackStateCompat.ACTION_PAUSE or
                 PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                PlaybackStateCompat.ACTION_STOP
+                PlaybackStateCompat.ACTION_STOP or
+                PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                PlaybackStateCompat.ACTION_SET_PLAYBACK_SPEED
 
         try {
+            val customMuteAction = PlaybackStateCompat.CustomAction.Builder(
+                ACTION_MUTE_TOGGLE,
+                if (isMuted) "Unmute" else "Mute",
+                if (isMuted) android.R.drawable.ic_lock_silent_mode else android.R.drawable.ic_lock_silent_mode_off
+            ).build()
+
             mediaSession?.setPlaybackState(
                 PlaybackStateCompat.Builder()
                     .setActions(actions)
+                    .addCustomAction(customMuteAction)
                     .setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 1.0f)
                     .build()
             )
         } catch (_: Exception) {}
     }
 
+    private fun updateMediaSessionMetadata() {
+        try {
+            val title = currentTrackTitle.ifBlank { currentStationName }
+            val artist = if (currentArtist.isNotBlank() && currentArtist != currentStationName) {
+                "$currentArtist • $currentStationName"
+            } else {
+                currentStationName
+            }
+
+            val largeIconBitmap = try {
+                BitmapFactory.decodeResource(resources, R.drawable.galaxy_radio_icon)
+            } catch (_: Exception) {
+                null
+            }
+
+            val metadata = MediaMetadataCompat.Builder()
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, currentStationName)
+                .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, title)
+                .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, artist)
+                .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, largeIconBitmap)
+                .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, largeIconBitmap)
+                .putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, largeIconBitmap)
+                .build()
+
+            mediaSession?.setMetadata(metadata)
+        } catch (_: Exception) {}
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // ALWAYS satisfy the Android foreground service requirement immediately
         startForegroundWithNotification()
+
+        // Handle hardware media buttons (headset, Bluetooth, etc.)
+        MediaButtonReceiver.handleIntent(mediaSession, intent)
 
         when (intent?.action) {
             ACTION_PLAY -> {
@@ -257,6 +339,15 @@ class RadioPlaybackService : Service() {
             ACTION_RESUME -> {
                 player?.play()
             }
+            ACTION_NEXT -> {
+                RadioPlayerManager.playNext(this)
+            }
+            ACTION_PREVIOUS -> {
+                RadioPlayerManager.playPrevious(this)
+            }
+            ACTION_MUTE_TOGGLE -> {
+                toggleMute()
+            }
             ACTION_STOP -> {
                 stopPlayback()
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -264,6 +355,16 @@ class RadioPlaybackService : Service() {
             }
         }
         return START_NOT_STICKY
+    }
+
+    private fun toggleMute() {
+        isMuted = !isMuted
+        player?.volume = if (isMuted) 0f else 1f
+        RadioPlayerManager.updateMuted(isMuted)
+        updateMediaSessionState(
+            if (player?.isPlaying == true) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
+        )
+        updateNotification()
     }
 
     private fun startStreaming(url: String, name: String, genre: String) {
@@ -282,6 +383,8 @@ class RadioPlaybackService : Service() {
 
         initializePlayer()
         RadioPlayerManager.updateStatus(PlayerStatus.BUFFERING)
+        updateMediaSessionState(PlaybackStateCompat.STATE_BUFFERING)
+        updateMediaSessionMetadata()
         updateNotification()
 
         streamPrepareJob = serviceScope.launch {
@@ -316,6 +419,7 @@ class RadioPlaybackService : Service() {
                     currentTrackTitle = targetName
                     currentArtist = targetGenre
                     RadioPlayerManager.updateMetadata(currentTrackTitle, currentArtist)
+                    updateMediaSessionMetadata()
                     updateNotification()
                 }
             }
@@ -354,6 +458,7 @@ class RadioPlaybackService : Service() {
                             currentTrackTitle = title
                             currentArtist = if (!artist.isNullOrBlank()) artist else currentStationName
                             RadioPlayerManager.updateMetadata(currentTrackTitle, currentArtist)
+                            updateMediaSessionMetadata()
                             updateNotification()
                         }
                     }
@@ -412,10 +517,32 @@ class RadioPlaybackService : Service() {
         )
 
         val isPlaying = player?.isPlaying == true
+
+        val prevActionIntent = PendingIntent.getService(
+            this,
+            10,
+            Intent(this, RadioPlaybackService::class.java).apply { action = ACTION_PREVIOUS },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val toggleActionIntent = PendingIntent.getService(
             this,
             1,
             Intent(this, RadioPlaybackService::class.java).apply { action = ACTION_TOGGLE },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val nextActionIntent = PendingIntent.getService(
+            this,
+            11,
+            Intent(this, RadioPlaybackService::class.java).apply { action = ACTION_NEXT },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val muteActionIntent = PendingIntent.getService(
+            this,
+            12,
+            Intent(this, RadioPlaybackService::class.java).apply { action = ACTION_MUTE_TOGGLE },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
@@ -439,6 +566,8 @@ class RadioPlaybackService : Service() {
             " • ⏳ Sleep in ${min}m"
         } else ""
 
+        val muteNotice = if (isMuted) " • 🔇 Muted" else ""
+
         val subText = if (sleepSec != null && sleepSec > 0) {
             val min = (sleepSec + 59) / 60
             "Mini Player • Sleep ${min}m"
@@ -454,7 +583,7 @@ class RadioPlaybackService : Service() {
 
         val mediaStyle = MediaStyle()
             .setMediaSession(mediaSession?.sessionToken)
-            .setShowActionsInCompactView(0, 1) // Action 0: Play/Pause, Action 1: Stop
+            .setShowActionsInCompactView(0, 1, 2) // Action 0: Previous, Action 1: Play/Pause, Action 2: Next
             .setShowCancelButton(true)
             .setCancelButtonIntent(stopActionIntent)
 
@@ -466,7 +595,7 @@ class RadioPlaybackService : Service() {
                 }
             }
             .setContentTitle(title)
-            .setContentText("$subtitle$sleepNotice")
+            .setContentText("$subtitle$sleepNotice$muteNotice")
             .setSubText(subText)
             .setContentIntent(contentIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -474,11 +603,31 @@ class RadioPlaybackService : Service() {
             .setColor(0xFF00F2FE.toInt()) // Cyan accent color
             .setColorized(true)
             .setOngoing(isPlaying)
+            // Action 0: Previous station
+            .addAction(
+                android.R.drawable.ic_media_previous,
+                "Previous",
+                prevActionIntent
+            )
+            // Action 1: Play / Pause toggle
             .addAction(
                 if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
                 if (isPlaying) "Pause" else "Play",
                 toggleActionIntent
             )
+            // Action 2: Next station
+            .addAction(
+                android.R.drawable.ic_media_next,
+                "Next",
+                nextActionIntent
+            )
+            // Action 3: Volume Mute / Unmute
+            .addAction(
+                if (isMuted) android.R.drawable.ic_lock_silent_mode else android.R.drawable.ic_lock_silent_mode_off,
+                if (isMuted) "Unmute" else "Mute",
+                muteActionIntent
+            )
+            // Action 4: Stop
             .addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 "Stop",
@@ -531,6 +680,9 @@ class RadioPlaybackService : Service() {
         const val ACTION_PAUSE = "com.example.ACTION_PAUSE"
         const val ACTION_RESUME = "com.example.ACTION_RESUME"
         const val ACTION_STOP = "com.example.ACTION_STOP"
+        const val ACTION_NEXT = "com.example.ACTION_NEXT"
+        const val ACTION_PREVIOUS = "com.example.ACTION_PREVIOUS"
+        const val ACTION_MUTE_TOGGLE = "com.example.ACTION_MUTE_TOGGLE"
 
         const val EXTRA_STREAM_URL = "extra_stream_url"
         const val EXTRA_STATION_NAME = "extra_station_name"

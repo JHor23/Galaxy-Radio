@@ -31,7 +31,10 @@ class RadioStationRepository(
         list.map { it.toRadioStation() }
     }
 
-    val curatedGalaxyStations = listOf(
+    val curatedGalaxyStations = CURATED_GALAXY_STATIONS
+
+    companion object {
+        val CURATED_GALAXY_STATIONS = listOf(
         RadioStation(
             id = "curated_soma_spacestation",
             name = "Space Station Soma",
@@ -150,6 +153,7 @@ class RadioStationRepository(
             country = "Global"
         )
     )
+    }
 
     suspend fun fetchPopularStations(tag: String? = null): List<RadioStation> = withContext(Dispatchers.IO) {
         try {

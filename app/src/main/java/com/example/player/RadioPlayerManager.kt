@@ -29,6 +29,7 @@ data class PlayerUiState(
     val bytesStreamed: Long = 0L,
     val streamDurationSeconds: Long = 0L,
     val sleepTimerRemainingSeconds: Long? = null,
+    val isMuted: Boolean = false,
     val errorMessage: String? = null
 ) {
     val isPlaying: Boolean
@@ -118,8 +119,47 @@ object RadioPlayerManager {
         }
     }
 
+    private var stationQueue: List<RadioStation> = emptyList()
+
+    fun setStationQueue(stations: List<RadioStation>) {
+        if (stations.isNotEmpty()) {
+            stationQueue = stations
+        }
+    }
+
+    fun playNext(context: Context) {
+        val current = _uiState.value.currentStation
+        val queue = if (stationQueue.isNotEmpty()) stationQueue else com.example.data.repository.RadioStationRepository.CURATED_GALAXY_STATIONS
+        if (queue.isEmpty()) return
+
+        val currentIndex = queue.indexOfFirst { it.id == current?.id || it.streamUrl == current?.streamUrl }
+        val nextIndex = if (currentIndex >= 0) (currentIndex + 1) % queue.size else 0
+        playStation(context, queue[nextIndex])
+    }
+
+    fun playPrevious(context: Context) {
+        val current = _uiState.value.currentStation
+        val queue = if (stationQueue.isNotEmpty()) stationQueue else com.example.data.repository.RadioStationRepository.CURATED_GALAXY_STATIONS
+        if (queue.isEmpty()) return
+
+        val currentIndex = queue.indexOfFirst { it.id == current?.id || it.streamUrl == current?.streamUrl }
+        val prevIndex = if (currentIndex > 0) currentIndex - 1 else queue.size - 1
+        playStation(context, queue[prevIndex])
+    }
+
+    fun toggleMute(context: Context) {
+        val intent = Intent(context, RadioPlaybackService::class.java).apply {
+            action = RadioPlaybackService.ACTION_MUTE_TOGGLE
+        }
+        startService(context, intent)
+    }
+
     fun setQualityPreset(preset: AudioQualityPreset) {
         _uiState.update { it.copy(audioQuality = preset) }
+    }
+
+    internal fun updateMuted(isMuted: Boolean) {
+        _uiState.update { it.copy(isMuted = isMuted) }
     }
 
     // Internal updates from service
