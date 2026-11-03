@@ -29,6 +29,7 @@ Whether you're tuning into live global broadcasts, managing custom frequency str
 
 * Modern Web Technologies & Native Wrappers
 * Advanced Audio Streaming APIs & DSP Engine
+* This was created with A.I.
 
 ---
 
