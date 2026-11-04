@@ -84,12 +84,16 @@ object RadioPlayerManager {
 
     fun togglePlayPause(context: Context) {
         val current = _uiState.value
-        if (current.currentStation == null) return
+        val station = current.currentStation ?: return
 
-        val intent = Intent(context, RadioPlaybackService::class.java).apply {
-            action = RadioPlaybackService.ACTION_TOGGLE
+        if (current.status == PlayerStatus.ERROR || current.status == PlayerStatus.IDLE) {
+            playStation(context, station)
+        } else {
+            val intent = Intent(context, RadioPlaybackService::class.java).apply {
+                action = RadioPlaybackService.ACTION_TOGGLE
+            }
+            startService(context, intent)
         }
-        startService(context, intent)
     }
 
     fun pause(context: Context) {
@@ -100,10 +104,17 @@ object RadioPlayerManager {
     }
 
     fun resume(context: Context) {
-        val intent = Intent(context, RadioPlaybackService::class.java).apply {
-            action = RadioPlaybackService.ACTION_RESUME
+        val current = _uiState.value
+        val station = current.currentStation ?: return
+
+        if (current.status == PlayerStatus.ERROR || current.status == PlayerStatus.IDLE) {
+            playStation(context, station)
+        } else {
+            val intent = Intent(context, RadioPlaybackService::class.java).apply {
+                action = RadioPlaybackService.ACTION_RESUME
+            }
+            startService(context, intent)
         }
-        startService(context, intent)
     }
 
     fun stop(context: Context) {

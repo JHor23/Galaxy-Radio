@@ -69,10 +69,13 @@ object AudioStreamCrawler {
                 }
             }
 
-            // Step 4: Fallback to common mountpoints for this host
-            val mountpointStream = probeCommonMountpoints(trimmedUrl)
-            if (mountpointStream != null) {
-                return@withContext Result.success(mountpointStream)
+            // Step 4: Fallback to common mountpoints for this host only if no specific path was provided
+            val parsedUrl = trimmedUrl.toHttpUrlOrNull()
+            if (parsedUrl != null && parsedUrl.encodedPath.length <= 1) {
+                val mountpointStream = probeCommonMountpoints(trimmedUrl)
+                if (mountpointStream != null) {
+                    return@withContext Result.success(mountpointStream)
+                }
             }
 
             Result.failure(Exception("No active audio feed or streaming player found at this URL."))

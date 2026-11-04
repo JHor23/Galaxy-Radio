@@ -6,6 +6,10 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.BitmapFactory
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -48,10 +52,16 @@ class RadioPlaybackService : Service() {
     private var streamPrepareJob: Job? = null
     private var metadataJob: Job? = null
     private var statsJob: Job? = null
+    private var reconnectJob: Job? = null
 
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSessionCompat? = null
     private var wakeLock: PowerManager.WakeLock? = null
+
+    private var connectivityManager: ConnectivityManager? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var wasPlayingBeforeNetworkLoss: Boolean = false
+    private var isNetworkAvailable: Boolean = true
 
     private var currentUrl: String = ""
     private var currentStationName: String = "Galaxy Radio"
@@ -67,8 +77,69 @@ class RadioPlaybackService : Service() {
         val powerManager = getSystemService(POWER_SERVICE) as? PowerManager
         wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GalaxyRadio:WakeLock")
 
+        connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as? ConnectivityManager
+        checkInitialNetwork()
+        registerNetworkCallback()
+
         initializeMediaSession()
         initializePlayer()
+    }
+
+    private fun checkInitialNetwork() {
+        try {
+            val activeNet = connectivityManager?.activeNetwork
+            val caps = activeNet?.let { connectivityManager?.getNetworkCapabilities(it) }
+            isNetworkAvailable = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        } catch (_: Exception) {
+            isNetworkAvailable = true
+        }
+    }
+
+    private fun registerNetworkCallback() {
+        try {
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+
+            networkCallback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    isNetworkAvailable = true
+                    serviceScope.launch(Dispatchers.Main) {
+                        if (wasPlayingBeforeNetworkLoss && currentUrl.isNotBlank()) {
+                            // Automatically reconnect the EXACT station that was interrupted by Airplane Mode
+                            startStreaming(currentUrl, currentStationName, currentGenre)
+                        }
+                    }
+                }
+
+                override fun onLost(network: Network) {
+                    isNetworkAvailable = false
+                    serviceScope.launch(Dispatchers.Main) {
+                        if (player?.isPlaying == true ||
+                            RadioPlayerManager.uiState.value.status == PlayerStatus.PLAYING ||
+                            RadioPlayerManager.uiState.value.status == PlayerStatus.BUFFERING
+                        ) {
+                            wasPlayingBeforeNetworkLoss = true
+                            reconnectJob?.cancel()
+                            RadioPlayerManager.updateStatus(PlayerStatus.BUFFERING, "Network disconnected. Waiting for connection...")
+                            updateMediaSessionState(PlaybackStateCompat.STATE_BUFFERING)
+                            updateNotification()
+                        }
+                    }
+                }
+            }
+            networkCallback?.let { connectivityManager?.registerNetworkCallback(request, it) }
+        } catch (_: Exception) {}
+    }
+
+    private fun resumeCurrentStationOrPlay() {
+        if (player?.playbackState == Player.STATE_IDLE || player?.currentMediaItem == null) {
+            if (currentUrl.isNotBlank()) {
+                startStreaming(currentUrl, currentStationName, currentGenre)
+            }
+        } else {
+            player?.play()
+        }
     }
 
     private fun initializeMediaSession() {
@@ -93,14 +164,18 @@ class RadioPlaybackService : Service() {
                 isActive = true
                 setCallback(object : MediaSessionCompat.Callback() {
                     override fun onPlay() {
-                        player?.play()
+                        resumeCurrentStationOrPlay()
                     }
 
                     override fun onPause() {
+                        wasPlayingBeforeNetworkLoss = false
+                        reconnectJob?.cancel()
                         player?.pause()
                     }
 
                     override fun onStop() {
+                        wasPlayingBeforeNetworkLoss = false
+                        reconnectJob?.cancel()
                         stopPlayback()
                         stopForeground(STOP_FOREGROUND_REMOVE)
                         stopSelf()
@@ -226,46 +301,65 @@ class RadioPlaybackService : Service() {
             val isForbiddenOrAuth = httpException?.responseCode == 403 || httpException?.responseCode == 401
             val isNotFound = httpException?.responseCode == 404
 
+            val isNetworkDisconnection = !isNetworkAvailable ||
+                    rootCause is java.io.IOException ||
+                    rootCause is androidx.media3.datasource.HttpDataSource.HttpDataSourceException ||
+                    rootCause is java.net.SocketException ||
+                    rootCause is java.net.SocketTimeoutException ||
+                    rootCause is java.net.UnknownHostException ||
+                    (isUnrecognizedFormat && !isNetworkAvailable)
+
+            if (isNetworkDisconnection) {
+                // Airplane Mode enabled or connection dropped while streaming
+                wasPlayingBeforeNetworkLoss = true
+                metadataJob?.cancel()
+                statsJob?.cancel()
+                player?.stop()
+
+                RadioPlayerManager.updateStatus(PlayerStatus.BUFFERING, "Network disconnected. Reconnecting...")
+                updateMediaSessionState(PlaybackStateCompat.STATE_BUFFERING)
+                releaseWakeLock()
+                updateNotification()
+
+                // Background polling watcher in case network callback is delayed
+                reconnectJob?.cancel()
+                reconnectJob = serviceScope.launch {
+                    var attempts = 0
+                    while (isActive && attempts < 30 && wasPlayingBeforeNetworkLoss && currentUrl.isNotBlank()) {
+                        delay(3_000)
+                        attempts++
+                        try {
+                            val activeNet = connectivityManager?.activeNetwork
+                            val caps = activeNet?.let { connectivityManager?.getNetworkCapabilities(it) }
+                            val hasInternet = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                            if (hasInternet && wasPlayingBeforeNetworkLoss && currentUrl.isNotBlank()) {
+                                isNetworkAvailable = true
+                                startStreaming(currentUrl, currentStationName, currentGenre)
+                                break
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+                return
+            }
+
+            wasPlayingBeforeNetworkLoss = false
+            reconnectJob?.cancel()
+
             val friendlyMessage = when {
                 isForbiddenOrAuth -> "Access to this station stream was blocked (403 Forbidden)"
                 isNotFound -> "Station stream not found (404)"
                 isUnrecognizedFormat -> "Audio stream format unrecognized or offline"
                 else -> error.localizedMessage ?: "Stream connection error"
             }
-            val failedUrl = currentUrl
 
             player?.stop()
             player?.clearMediaItems()
 
-            // If the stream failed with 403, unrecognized format, or was a webpage, attempt an automatic crawler recovery
-            val shouldAttemptCrawl = failedUrl.isNotBlank() &&
-                    (isForbiddenOrAuth || isUnrecognizedFormat || failedUrl.contains("/player") ||
-                            failedUrl.contains(".htm") || failedUrl.contains(".php") ||
-                            failedUrl.contains("happyradio.fm") || failedUrl.contains(".pls") || failedUrl.contains(".m3u"))
-
-            if (shouldAttemptCrawl) {
-                serviceScope.launch(Dispatchers.IO) {
-                    val crawlResult = AudioStreamCrawler.crawlForAudioFeed(failedUrl)
-                    val crawled = crawlResult.getOrNull()
-                    if (crawled != null && crawled.resolvedStreamUrl != failedUrl) {
-                        launch(Dispatchers.Main) {
-                            startStreaming(crawled.resolvedStreamUrl, crawled.stationName, crawled.genre)
-                        }
-                        return@launch
-                    }
-                    launch(Dispatchers.Main) {
-                        RadioPlayerManager.updateStatus(PlayerStatus.ERROR, friendlyMessage)
-                        updateMediaSessionState(PlaybackStateCompat.STATE_ERROR)
-                        releaseWakeLock()
-                        updateNotification()
-                    }
-                }
-            } else {
-                RadioPlayerManager.updateStatus(PlayerStatus.ERROR, friendlyMessage)
-                updateMediaSessionState(PlaybackStateCompat.STATE_ERROR)
-                releaseWakeLock()
-                updateNotification()
-            }
+            RadioPlayerManager.updateStatus(PlayerStatus.ERROR, friendlyMessage)
+            updateMediaSessionState(PlaybackStateCompat.STATE_ERROR)
+            releaseWakeLock()
+            updateNotification()
         }
 
         override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
@@ -354,27 +448,37 @@ class RadioPlaybackService : Service() {
             }
             ACTION_TOGGLE -> {
                 if (player?.isPlaying == true) {
+                    wasPlayingBeforeNetworkLoss = false
+                    reconnectJob?.cancel()
                     player?.pause()
                 } else {
-                    player?.play()
+                    resumeCurrentStationOrPlay()
                 }
             }
             ACTION_PAUSE -> {
+                wasPlayingBeforeNetworkLoss = false
+                reconnectJob?.cancel()
                 player?.pause()
             }
             ACTION_RESUME -> {
-                player?.play()
+                resumeCurrentStationOrPlay()
             }
             ACTION_NEXT -> {
+                wasPlayingBeforeNetworkLoss = false
+                reconnectJob?.cancel()
                 RadioPlayerManager.playNext(this)
             }
             ACTION_PREVIOUS -> {
+                wasPlayingBeforeNetworkLoss = false
+                reconnectJob?.cancel()
                 RadioPlayerManager.playPrevious(this)
             }
             ACTION_MUTE_TOGGLE -> {
                 toggleMute()
             }
             ACTION_STOP -> {
+                wasPlayingBeforeNetworkLoss = false
+                reconnectJob?.cancel()
                 stopPlayback()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -396,10 +500,12 @@ class RadioPlaybackService : Service() {
     private fun startStreaming(url: String, name: String, genre: String) {
         if (url.isBlank()) return
 
-        // 1. Immediately cancel any pending prepare or metadata jobs
+        // 1. Immediately cancel any pending prepare, reconnect or metadata jobs
         streamPrepareJob?.cancel()
+        reconnectJob?.cancel()
         metadataJob?.cancel()
         statsJob?.cancel()
+        wasPlayingBeforeNetworkLoss = false
 
         // 2. Immediately stop and clear any currently playing stream from the previous station
         player?.stop()
@@ -684,6 +790,8 @@ class RadioPlaybackService : Service() {
     }
 
     private fun stopPlayback() {
+        wasPlayingBeforeNetworkLoss = false
+        reconnectJob?.cancel()
         streamPrepareJob?.cancel()
         metadataJob?.cancel()
         statsJob?.cancel()
@@ -707,6 +815,9 @@ class RadioPlaybackService : Service() {
 
     override fun onDestroy() {
         stopPlayback()
+        try {
+            networkCallback?.let { connectivityManager?.unregisterNetworkCallback(it) }
+        } catch (_: Exception) {}
         player?.removeListener(playerListener)
         player?.release()
         player = null
