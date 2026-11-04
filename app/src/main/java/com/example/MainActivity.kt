@@ -276,6 +276,20 @@ fun RadioAppMain(
                                 repository.toggleFavorite(station, !station.isFavorite)
                             }
                         },
+                        onDeleteStation = { station ->
+                            scope.launch {
+                                if (station.isCustom) {
+                                    repository.deleteCustomStation(station)
+                                } else {
+                                    repository.deleteCuratedStation(station.id)
+                                }
+                            }
+                        },
+                        onResetCurated = {
+                            scope.launch {
+                                repository.resetAllCuratedStations()
+                            }
+                        },
                         onOpenAddStation = { isAddStationSheetOpen = true }
                     )
                     1 -> EqualizerScreen(
@@ -296,6 +310,11 @@ fun RadioAppMain(
                         onDeleteCustom = { station ->
                             scope.launch {
                                 repository.deleteCustomStation(station)
+                            }
+                        },
+                        onResetCurated = {
+                            scope.launch {
+                                repository.resetAllCuratedStations()
                             }
                         },
                         onOpenAddStation = { isAddStationSheetOpen = true }

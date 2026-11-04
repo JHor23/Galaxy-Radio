@@ -13,6 +13,9 @@ import okhttp3.Request
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+import com.example.data.local.HiddenCuratedStationEntity
+import kotlinx.coroutines.flow.first
+
 class RadioStationRepository(
     private val stationDao: RadioStationDao,
     private val api: RadioBrowserApi = RadioBrowserApi.create()
@@ -31,7 +34,29 @@ class RadioStationRepository(
         list.map { it.toRadioStation() }
     }
 
-    val curatedGalaxyStations = CURATED_GALAXY_STATIONS
+    val hiddenCuratedIds: Flow<List<String>> = stationDao.getHiddenCuratedStationIds()
+
+    val curatedGalaxyStations: Flow<List<RadioStation>> = hiddenCuratedIds.map { hiddenIds ->
+        val hiddenSet = hiddenIds.toSet()
+        CURATED_GALAXY_STATIONS.filter { it.id !in hiddenSet }
+    }
+
+    suspend fun getActiveCuratedStations(): List<RadioStation> = withContext(Dispatchers.IO) {
+        val hiddenSet = hiddenCuratedIds.first().toSet()
+        CURATED_GALAXY_STATIONS.filter { it.id !in hiddenSet }
+    }
+
+    suspend fun deleteCuratedStation(stationId: String) = withContext(Dispatchers.IO) {
+        stationDao.hideCuratedStation(HiddenCuratedStationEntity(stationId))
+    }
+
+    suspend fun resetAllCuratedStations() = withContext(Dispatchers.IO) {
+        stationDao.clearAllHiddenCuratedStations()
+    }
+
+    suspend fun getHiddenCuratedStationsCount(): Int = withContext(Dispatchers.IO) {
+        hiddenCuratedIds.first().size
+    }
 
     companion object {
         val CURATED_GALAXY_STATIONS = listOf(
@@ -105,13 +130,14 @@ class RadioStationRepository(
             faviconUrl = "https://somafm.com/img3/defcon120.png"
         ),
         RadioStation(
-            id = "curated_swissgroove",
-            name = "SwissGroove",
-            streamUrl = "https://stream.swissgroove.ch/live/mp3",
-            genre = "Nu-Jazz & Soul",
+            id = "curated_soma_missioncontrol",
+            name = "Mission Control",
+            streamUrl = "https://ice1.somafm.com/missioncontrol-128-mp3",
+            genre = "Ambient Space & NASA",
             bitrate = 128,
             codec = "MP3",
-            country = "Switzerland"
+            country = "United States",
+            faviconUrl = "https://somafm.com/img3/missioncontrol120.png"
         ),
         RadioStation(
             id = "curated_soma_beatblender",
@@ -144,13 +170,14 @@ class RadioStationRepository(
             faviconUrl = "https://somafm.com/img3/suburbsofgoa120.png"
         ),
         RadioStation(
-            id = "curated_cinematic_scenery",
-            name = "Cinematic Soundscapes",
-            streamUrl = "https://stream.zeno.fm/y1k04v87shzuv",
-            genre = "Cinematic Ambient",
+            id = "curated_soma_cliqhop",
+            name = "Cliqhop IDM",
+            streamUrl = "https://ice1.somafm.com/cliqhop-128-mp3",
+            genre = "Cosmic Electronic",
             bitrate = 128,
             codec = "MP3",
-            country = "Global"
+            country = "United States",
+            faviconUrl = "https://somafm.com/img3/cliqhop120.png"
         )
     )
     }
@@ -180,15 +207,16 @@ class RadioStationRepository(
                 } else null
             }
 
-            if (remoteStations.isNotEmpty()) remoteStations else curatedGalaxyStations
+            if (remoteStations.isNotEmpty()) remoteStations else getActiveCuratedStations()
         } catch (e: Exception) {
             // Fallback gracefully to curated celestial stations if offline or network timeout
-            curatedGalaxyStations
+            getActiveCuratedStations()
         }
     }
 
     suspend fun searchStations(query: String): List<RadioStation> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
+        val activeCurated = getActiveCuratedStations()
         try {
             val dtoList = api.searchStations(name = query.trim(), limit = 30)
             val remote = dtoList.mapNotNull { dto ->
@@ -207,11 +235,11 @@ class RadioStationRepository(
                     )
                 } else null
             }
-            if (remote.isNotEmpty()) remote else curatedGalaxyStations.filter {
+            if (remote.isNotEmpty()) remote else activeCurated.filter {
                 it.name.contains(query, ignoreCase = true) || it.genre.contains(query, ignoreCase = true)
             }
         } catch (e: Exception) {
-            curatedGalaxyStations.filter {
+            activeCurated.filter {
                 it.name.contains(query, ignoreCase = true) || it.genre.contains(query, ignoreCase = true)
             }
         }

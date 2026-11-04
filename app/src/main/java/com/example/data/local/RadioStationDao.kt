@@ -37,4 +37,16 @@ interface RadioStationDao {
 
     @Query("UPDATE radio_stations SET isFavorite = :isFavorite WHERE id = :id")
     suspend fun updateFavoriteStatus(id: String, isFavorite: Boolean)
+
+    @Query("SELECT stationId FROM hidden_curated_stations")
+    fun getHiddenCuratedStationIds(): Flow<List<String>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun hideCuratedStation(hidden: HiddenCuratedStationEntity)
+
+    @Query("DELETE FROM hidden_curated_stations WHERE stationId = :stationId")
+    suspend fun unhideCuratedStation(stationId: String)
+
+    @Query("DELETE FROM hidden_curated_stations")
+    suspend fun clearAllHiddenCuratedStations()
 }

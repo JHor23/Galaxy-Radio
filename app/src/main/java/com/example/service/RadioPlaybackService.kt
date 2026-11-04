@@ -141,8 +141,15 @@ class RadioPlaybackService : Service() {
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
 
+        val defaultRequestHeaders = mapOf(
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept" to "*/*",
+            "Icy-MetaData" to "1"
+        )
+
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 GalaxyRadio/2.0")
+            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+            .setDefaultRequestProperties(defaultRequestHeaders)
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(15_000)
@@ -210,14 +217,33 @@ class RadioPlaybackService : Service() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            val message = error.localizedMessage ?: "Stream connection error"
+            val rootCause = error.cause
+            val isUnrecognizedFormat = rootCause is androidx.media3.exoplayer.source.UnrecognizedInputFormatException ||
+                    (error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED) ||
+                    (error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED)
+
+            val httpException = rootCause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException
+            val isForbiddenOrAuth = httpException?.responseCode == 403 || httpException?.responseCode == 401
+            val isNotFound = httpException?.responseCode == 404
+
+            val friendlyMessage = when {
+                isForbiddenOrAuth -> "Access to this station stream was blocked (403 Forbidden)"
+                isNotFound -> "Station stream not found (404)"
+                isUnrecognizedFormat -> "Audio stream format unrecognized or offline"
+                else -> error.localizedMessage ?: "Stream connection error"
+            }
             val failedUrl = currentUrl
 
-            // If the stream failed and wasn't resolved yet, attempt an automatic crawler recovery
-            if (failedUrl.isNotBlank() &&
-                !failedUrl.contains("surfernetwork.com") &&
-                (failedUrl.contains("/player") || failedUrl.contains(".htm") || !failedUrl.endsWith(".mp3"))
-            ) {
+            player?.stop()
+            player?.clearMediaItems()
+
+            // If the stream failed with 403, unrecognized format, or was a webpage, attempt an automatic crawler recovery
+            val shouldAttemptCrawl = failedUrl.isNotBlank() &&
+                    (isForbiddenOrAuth || isUnrecognizedFormat || failedUrl.contains("/player") ||
+                            failedUrl.contains(".htm") || failedUrl.contains(".php") ||
+                            failedUrl.contains("happyradio.fm") || failedUrl.contains(".pls") || failedUrl.contains(".m3u"))
+
+            if (shouldAttemptCrawl) {
                 serviceScope.launch(Dispatchers.IO) {
                     val crawlResult = AudioStreamCrawler.crawlForAudioFeed(failedUrl)
                     val crawled = crawlResult.getOrNull()
@@ -228,14 +254,14 @@ class RadioPlaybackService : Service() {
                         return@launch
                     }
                     launch(Dispatchers.Main) {
-                        RadioPlayerManager.updateStatus(PlayerStatus.ERROR, message)
+                        RadioPlayerManager.updateStatus(PlayerStatus.ERROR, friendlyMessage)
                         updateMediaSessionState(PlaybackStateCompat.STATE_ERROR)
                         releaseWakeLock()
                         updateNotification()
                     }
                 }
             } else {
-                RadioPlayerManager.updateStatus(PlayerStatus.ERROR, message)
+                RadioPlayerManager.updateStatus(PlayerStatus.ERROR, friendlyMessage)
                 updateMediaSessionState(PlaybackStateCompat.STATE_ERROR)
                 releaseWakeLock()
                 updateNotification()
@@ -370,10 +396,16 @@ class RadioPlaybackService : Service() {
     private fun startStreaming(url: String, name: String, genre: String) {
         if (url.isBlank()) return
 
+        // 1. Immediately cancel any pending prepare or metadata jobs
         streamPrepareJob?.cancel()
         metadataJob?.cancel()
         statsJob?.cancel()
 
+        // 2. Immediately stop and clear any currently playing stream from the previous station
+        player?.stop()
+        player?.clearMediaItems()
+
+        // 3. Reset station and session metadata
         currentUrl = url
         currentStationName = name.ifBlank { "Galaxy Radio" }
         currentGenre = genre.ifBlank { "Live Stream" }
@@ -382,6 +414,7 @@ class RadioPlaybackService : Service() {
         sessionStartTimeMs = System.currentTimeMillis()
 
         initializePlayer()
+        RadioPlayerManager.updateMetadata(currentTrackTitle, currentArtist)
         RadioPlayerManager.updateStatus(PlayerStatus.BUFFERING)
         updateMediaSessionState(PlaybackStateCompat.STATE_BUFFERING)
         updateMediaSessionMetadata()
@@ -392,17 +425,14 @@ class RadioPlaybackService : Service() {
             var targetName = currentStationName
             var targetGenre = currentGenre
 
-            // Detect whether the given URL is a player web page or non-direct stream
-            val lower = url.lowercase()
-            val isWebpageOrNeedsResolution = lower.contains("/player") ||
+            // Only crawl if it is an explicit web player page or playlist
+            val lower = url.lowercase().trim()
+            val isWebpageOrPlaylist = lower.contains("/player") ||
                     lower.contains(".html") || lower.contains(".htm") || lower.contains(".php") ||
                     lower.contains("happyradio.fm") || lower.contains("wixsite.com") ||
-                    (!lower.contains(".mp3") && !lower.contains(".aac") && !lower.contains(".ogg") &&
-                     !lower.contains(":8000") && !lower.contains(":8002") && !lower.contains(":8080") &&
-                     !lower.contains("stream") && !lower.contains("icecast") &&
-                     !lower.contains(".m3u") && !lower.contains(".pls"))
+                    lower.endsWith(".pls") || lower.endsWith(".m3u")
 
-            if (isWebpageOrNeedsResolution) {
+            if (isWebpageOrPlaylist) {
                 val crawlResult = AudioStreamCrawler.crawlForAudioFeed(url)
                 val crawled = crawlResult.getOrNull()
                 if (crawled != null) {
@@ -421,11 +451,18 @@ class RadioPlaybackService : Service() {
                     RadioPlayerManager.updateMetadata(currentTrackTitle, currentArtist)
                     updateMediaSessionMetadata()
                     updateNotification()
+                } else {
+                    // Crawl failed: do not feed raw HTML to ExoPlayer as it causes UnrecognizedInputFormatException
+                    RadioPlayerManager.updateStatus(PlayerStatus.ERROR, "No active audio stream found at this webpage")
+                    updateMediaSessionState(PlaybackStateCompat.STATE_ERROR)
+                    releaseWakeLock()
+                    updateNotification()
+                    return@launch
                 }
             }
 
             try {
-                val mediaItem = MediaItem.Builder()
+                val mediaItemBuilder = MediaItem.Builder()
                     .setUri(targetStreamUrl)
                     .setMediaMetadata(
                         MediaMetadata.Builder()
@@ -433,7 +470,16 @@ class RadioPlaybackService : Service() {
                             .setArtist(currentGenre)
                             .build()
                     )
-                    .build()
+
+                val targetLower = targetStreamUrl.lowercase()
+                when {
+                    targetLower.contains(".m3u8") -> mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
+                    targetLower.endsWith(".mp3") -> mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_MPEG)
+                    targetLower.endsWith(".aac") -> mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)
+                    targetLower.endsWith(".ogg") || targetLower.endsWith(".opus") -> mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_OGG)
+                }
+
+                val mediaItem = mediaItemBuilder.build()
 
                 player?.setMediaItem(mediaItem)
                 player?.prepare()

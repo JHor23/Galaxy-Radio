@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -33,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,6 +68,8 @@ fun ExploreScreen(
     onSelectStation: (RadioStation) -> Unit,
     onTogglePlayPause: () -> Unit,
     onToggleFavorite: (RadioStation) -> Unit,
+    onDeleteStation: ((RadioStation) -> Unit)? = null,
+    onResetCurated: (() -> Unit)? = null,
     onOpenAddStation: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -220,6 +224,9 @@ fun ExploreScreen(
             }
         }
 
+        val hiddenCuratedIds by repository.hiddenCuratedIds.collectAsState(initial = emptyList())
+        val hasDeletedCurated = hiddenCuratedIds.isNotEmpty()
+
         // Stations Count & Quick Add Action Bar
         Row(
             modifier = Modifier
@@ -237,25 +244,64 @@ fun ExploreScreen(
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .clickable(onClick = onOpenAddStation)
-                    .padding(horizontal = 6.dp, vertical = 4.dp)
-                    .testTag("quick_add_station_button")
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = null,
-                    tint = GalaxyCyan,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Add Custom",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = GalaxyCyan
-                )
+                if (hasDeletedCurated && onResetCurated != null) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = GalaxyCyan.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, GalaxyCyan.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                onResetCurated()
+                                loadStations(selectedTag)
+                            }
+                            .testTag("reset_curated_stations_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.RestartAlt,
+                                contentDescription = "Restore Curated Stations",
+                                tint = GalaxyCyan,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Restore (${hiddenCuratedIds.size})",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GalaxyCyan
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable(onClick = onOpenAddStation)
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                        .testTag("quick_add_station_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = null,
+                        tint = GalaxyCyan,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Add Custom",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = GalaxyCyan
+                    )
+                }
             }
         }
 
@@ -311,7 +357,14 @@ fun ExploreScreen(
                             isBuffering = isCurrent && playerState.isBuffering,
                             onSelect = { onSelectStation(station) },
                             onTogglePlayPause = onTogglePlayPause,
-                            onToggleFavorite = { onToggleFavorite(station) }
+                            onToggleFavorite = { onToggleFavorite(station) },
+                            onDeleteStation = if (onDeleteStation != null) {
+                                {
+                                    onDeleteStation(station)
+                                    // Remove immediately from current display list
+                                    stations = stations.filter { it.id != station.id }
+                                }
+                            } else null
                         )
                     }
 

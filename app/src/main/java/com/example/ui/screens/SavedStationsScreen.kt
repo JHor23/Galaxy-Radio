@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -59,6 +60,7 @@ fun SavedStationsScreen(
     onTogglePlayPause: () -> Unit,
     onToggleFavorite: (RadioStation) -> Unit,
     onDeleteCustom: (RadioStation) -> Unit,
+    onResetCurated: (() -> Unit)? = null,
     onOpenAddStation: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -148,6 +150,9 @@ fun SavedStationsScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
+        val hiddenCuratedIds by repository.hiddenCuratedIds.collectAsState(initial = emptyList())
+        val hasDeletedCurated = hiddenCuratedIds.isNotEmpty()
+
         // Header Action Row
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -161,33 +166,69 @@ fun SavedStationsScreen(
                 color = GalaxyTextSecondary
             )
 
-            if (selectedTab == 0) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = GalaxyCyan.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, GalaxyCyan.copy(alpha = 0.4f)),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(onClick = onOpenAddStation)
-                        .testTag("saved_screen_add_button")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (hasDeletedCurated && onResetCurated != null) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = GalaxyCyan.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, GalaxyCyan.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onResetCurated() }
+                            .testTag("saved_screen_restore_curated_button")
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Add,
-                            contentDescription = null,
-                            tint = GalaxyCyan,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Add Stream URL",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = GalaxyCyan
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.RestartAlt,
+                                contentDescription = "Restore Curated Stations",
+                                tint = GalaxyCyan,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Restore Curated (${hiddenCuratedIds.size})",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GalaxyCyan
+                            )
+                        }
+                    }
+                }
+
+                if (selectedTab == 0) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = GalaxyCyan.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, GalaxyCyan.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(onClick = onOpenAddStation)
+                            .testTag("saved_screen_add_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Add,
+                                contentDescription = null,
+                                tint = GalaxyCyan,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Add Stream URL",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GalaxyCyan
+                            )
+                        }
                     }
                 }
             }
@@ -258,7 +299,7 @@ fun SavedStationsScreen(
                         onSelect = { onSelectStation(station) },
                         onTogglePlayPause = onTogglePlayPause,
                         onToggleFavorite = { onToggleFavorite(station) },
-                        onDeleteCustom = if (station.isCustom) {
+                        onDeleteStation = if (station.isCustom) {
                             { onDeleteCustom(station) }
                         } else null
                     )

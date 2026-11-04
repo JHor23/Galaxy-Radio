@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -59,7 +61,7 @@ fun StationCard(
     onSelect: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onDeleteCustom: (() -> Unit)? = null,
+    onDeleteStation: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val borderColor = if (isCurrent) GalaxyCyan.copy(alpha = 0.8f) else GalaxyCardBorder
@@ -68,6 +70,7 @@ fun StationCard(
     Surface(
         modifier = modifier
             .fillMaxWidth()
+            .height(82.dp)
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onSelect)
             .testTag("station_card_${station.id}"),
@@ -79,13 +82,14 @@ fun StationCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .height(82.dp)
+                .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Station Icon / Avatar
             Box(
                 modifier = Modifier
-                    .size(52.dp)
+                    .size(50.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(
                         Brush.linearGradient(
@@ -99,7 +103,7 @@ fun StationCard(
                         model = station.faviconUrl,
                         contentDescription = station.name,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(52.dp)
+                        modifier = Modifier.size(50.dp)
                     )
                 } else {
                     Text(
@@ -129,15 +133,17 @@ fun StationCard(
                 }
             }
 
-            Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
             // Station Details
             Column(
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = station.name,
@@ -169,7 +175,9 @@ fun StationCard(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(top = 3.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp)
                 ) {
                     Text(
                         text = station.displayGenre,
@@ -177,7 +185,8 @@ fun StationCard(
                             color = GalaxyTextSecondary
                         ),
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     Text(
                         text = "•",
@@ -188,10 +197,13 @@ fun StationCard(
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = GalaxyElectricBlue,
                             fontWeight = FontWeight.Medium
-                        )
+                        ),
+                        maxLines = 1
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
 
             // Actions: Favorite & Play/Pause
             Row(
@@ -211,16 +223,16 @@ fun StationCard(
                     )
                 }
 
-                if (onDeleteCustom != null && station.isCustom) {
+                if (onDeleteStation != null) {
                     IconButton(
-                        onClick = onDeleteCustom,
+                        onClick = onDeleteStation,
                         modifier = Modifier
                             .size(38.dp)
                             .testTag("delete_button_${station.id}")
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Delete,
-                            contentDescription = "Delete Custom Station",
+                            contentDescription = if (station.isCustom) "Delete Custom Station" else "Delete Station",
                             tint = GalaxyTextMuted,
                             modifier = Modifier.size(20.dp)
                         )
