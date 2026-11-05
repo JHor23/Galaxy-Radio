@@ -83,4 +83,21 @@ class ExampleRobolectricTest {
     assertTrue(matcher.find())
     assertEquals("https://stream.zeno.fm/nkeaps48xg0uv", matcher.group(1))
   }
+
+  @Test
+  fun `verify song history entity creation and fields`() {
+    val history = com.example.data.local.SongHistoryEntity(
+      id = 1L,
+      stationId = "curated_space_station",
+      stationName = "Space Station Soma",
+      streamUrl = "http://stream.somafm.com:80/spacestation-128-mp3",
+      trackTitle = "Solar Fields - Starlight",
+      artist = "Solar Fields",
+      playedAtTimestamp = 1700000000000L
+    )
+    assertEquals("Space Station Soma", history.stationName)
+    assertEquals("Solar Fields - Starlight", history.trackTitle)
+    assertEquals("Solar Fields", history.artist)
+    assertEquals(1700000000000L, history.playedAtTimestamp)
+  }
 }

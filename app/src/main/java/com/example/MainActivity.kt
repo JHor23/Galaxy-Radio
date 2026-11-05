@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.outlined.Equalizer
@@ -73,6 +74,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.audio.EqualizerManager
 import com.example.data.repository.RadioStationRepository
+import com.example.data.repository.SongHistoryRepository
 import com.example.model.RadioStation
 import com.example.player.PlayerUiState
 import com.example.player.RadioPlayerManager
@@ -81,6 +83,7 @@ import com.example.ui.components.FullscreenPlayerModal
 import com.example.ui.components.GalaxyStarfield
 import com.example.ui.components.MiniPlayerBar
 import com.example.ui.components.SleepTimerDialog
+import com.example.ui.components.StationHistoryModal
 import com.example.ui.screens.EqualizerScreen
 import com.example.ui.screens.ExploreScreen
 import com.example.ui.screens.QualityDataScreen
@@ -141,11 +144,14 @@ fun RadioAppMain(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val playerState by RadioPlayerManager.uiState.collectAsState()
+    val songHistoryRepository = remember { SongHistoryRepository.getInstance(context) }
 
     var currentTab by remember { mutableIntStateOf(0) }
     var isPlayerModalOpen by remember { mutableStateOf(false) }
     var isAddStationSheetOpen by remember { mutableStateOf(false) }
     var isSleepTimerDialogOpen by remember { mutableStateOf(false) }
+    var isHistoryModalOpen by remember { mutableStateOf(false) }
+    var historyStation by remember { mutableStateOf<RadioStation?>(null) }
 
     // Request notification permission for Android 13+ background playback controls
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -179,8 +185,9 @@ fun RadioAppMain(
     )
 
     // BackHandler to close player modal, sheet, or dialog before exiting
-    BackHandler(enabled = isSleepTimerDialogOpen || isPlayerModalOpen || isAddStationSheetOpen || currentTab != 0) {
+    BackHandler(enabled = isHistoryModalOpen || isSleepTimerDialogOpen || isPlayerModalOpen || isAddStationSheetOpen || currentTab != 0) {
         when {
+            isHistoryModalOpen -> isHistoryModalOpen = false
             isSleepTimerDialogOpen -> isSleepTimerDialogOpen = false
             isPlayerModalOpen -> isPlayerModalOpen = false
             isAddStationSheetOpen -> isAddStationSheetOpen = false
@@ -202,7 +209,11 @@ fun RadioAppMain(
                     playerState = playerState,
                     onOpenAddStation = { isAddStationSheetOpen = true },
                     onOpenPlayer = { if (playerState.currentStation != null) isPlayerModalOpen = true },
-                    onOpenSleepTimer = { isSleepTimerDialogOpen = true }
+                    onOpenSleepTimer = { isSleepTimerDialogOpen = true },
+                    onOpenHistory = {
+                        historyStation = playerState.currentStation
+                        isHistoryModalOpen = true
+                    }
                 )
             },
             bottomBar = {
@@ -290,7 +301,12 @@ fun RadioAppMain(
                                 repository.resetAllCuratedStations()
                             }
                         },
-                        onOpenAddStation = { isAddStationSheetOpen = true }
+                        onOpenAddStation = { isAddStationSheetOpen = true },
+                        onNavigateToSaved = { currentTab = 2 },
+                        onViewHistory = { station ->
+                            historyStation = station
+                            isHistoryModalOpen = true
+                        }
                     )
                     1 -> EqualizerScreen(
                         equalizerManager = equalizerManager
@@ -317,7 +333,12 @@ fun RadioAppMain(
                                 repository.resetAllCuratedStations()
                             }
                         },
-                        onOpenAddStation = { isAddStationSheetOpen = true }
+                        onOpenAddStation = { isAddStationSheetOpen = true },
+                        onNavigateToExplore = { currentTab = 0 },
+                        onViewHistory = { station ->
+                            historyStation = station
+                            isHistoryModalOpen = true
+                        }
                     )
                     3 -> QualityDataScreen(
                         playerState = playerState,
@@ -374,6 +395,10 @@ fun RadioAppMain(
                 },
                 onOpenSleepTimer = {
                     isSleepTimerDialogOpen = true
+                },
+                onOpenHistory = {
+                    historyStation = playerState.currentStation
+                    isHistoryModalOpen = true
                 }
             )
         }
@@ -384,6 +409,16 @@ fun RadioAppMain(
                 onDismiss = { isSleepTimerDialogOpen = false }
             )
         }
+
+        // Station Track History Modal
+        if (isHistoryModalOpen) {
+            StationHistoryModal(
+                station = historyStation ?: playerState.currentStation,
+                playerState = playerState,
+                songHistoryRepository = songHistoryRepository,
+                onDismiss = { isHistoryModalOpen = false }
+            )
+        }
     }
 }
 
@@ -392,7 +427,8 @@ fun GalaxyTopBar(
     playerState: PlayerUiState,
     onOpenAddStation: () -> Unit,
     onOpenPlayer: () -> Unit,
-    onOpenSleepTimer: () -> Unit
+    onOpenSleepTimer: () -> Unit,
+    onOpenHistory: () -> Unit
 ) {
     Surface(
         color = GalaxyDeep.copy(alpha = 0.95f),
@@ -459,6 +495,9 @@ fun GalaxyTopBar(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val sleepSec = playerState.sleepTimerRemainingSeconds
                 if (sleepSec != null && sleepSec > 0) {
+                    val m = sleepSec / 60
+                    val s = sleepSec % 60
+                    val countdownStr = String.format("%02d:%02d", m, s)
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = GalaxyCyan.copy(alpha = 0.15f),
@@ -481,7 +520,7 @@ fun GalaxyTopBar(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "${(sleepSec + 59) / 60}m",
+                                text = countdownStr,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = GalaxyCyan
@@ -511,6 +550,28 @@ fun GalaxyTopBar(
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                 }
+
+                Surface(
+                    shape = CircleShape,
+                    color = GalaxySurface,
+                    border = BorderStroke(1.dp, GalaxyCardBorder),
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onOpenHistory)
+                        .padding(end = 0.dp)
+                        .testTag("top_bar_history")
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Filled.History,
+                            contentDescription = "Station History",
+                            tint = GalaxyCyan,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
 
                 if (playerState.isPlaying) {
                     Surface(

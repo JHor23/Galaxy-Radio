@@ -123,8 +123,11 @@ fun MiniPlayerBar(
                     )
                     val sleepSec = playerState.sleepTimerRemainingSeconds
                     if (sleepSec != null && sleepSec > 0) {
+                        val m = sleepSec / 60
+                        val s = sleepSec % 60
+                        val countdown = String.format("%02d:%02d", m, s)
                         Text(
-                            text = " • ⏳ ${(sleepSec + 59) / 60}m",
+                            text = " • ⏳ $countdown",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = GalaxyCyan,
                                 fontSize = 11.sp,

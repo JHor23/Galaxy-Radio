@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -62,6 +63,7 @@ fun StationCard(
     onTogglePlayPause: () -> Unit,
     onToggleFavorite: () -> Unit,
     onDeleteStation: (() -> Unit)? = null,
+    onViewHistory: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val borderColor = if (isCurrent) GalaxyCyan.copy(alpha = 0.8f) else GalaxyCardBorder
@@ -221,6 +223,22 @@ fun StationCard(
                         tint = if (station.isFavorite) GalaxyCyan else GalaxyTextMuted,
                         modifier = Modifier.size(20.dp)
                     )
+                }
+
+                if (onViewHistory != null) {
+                    IconButton(
+                        onClick = onViewHistory,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .testTag("history_button_${station.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.History,
+                            contentDescription = "Station History",
+                            tint = GalaxyTextMuted,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
 
                 if (onDeleteStation != null) {

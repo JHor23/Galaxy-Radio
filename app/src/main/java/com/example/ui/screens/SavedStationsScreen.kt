@@ -62,6 +62,8 @@ fun SavedStationsScreen(
     onDeleteCustom: (RadioStation) -> Unit,
     onResetCurated: (() -> Unit)? = null,
     onOpenAddStation: () -> Unit,
+    onNavigateToExplore: (() -> Unit)? = null,
+    onViewHistory: ((RadioStation) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = Custom, 1 = Favorites
@@ -201,6 +203,37 @@ fun SavedStationsScreen(
                     }
                 }
 
+                if (onNavigateToExplore != null) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = GalaxyCyan.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, GalaxyCyan.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(onClick = onNavigateToExplore)
+                            .testTag("saved_to_explore_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Radio,
+                                contentDescription = "Explore Stations",
+                                tint = GalaxyCyan,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Explore",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GalaxyCyan
+                            )
+                        }
+                    }
+                }
+
                 if (selectedTab == 0) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
@@ -301,7 +334,8 @@ fun SavedStationsScreen(
                         onToggleFavorite = { onToggleFavorite(station) },
                         onDeleteStation = if (station.isCustom) {
                             { onDeleteCustom(station) }
-                        } else null
+                        } else null,
+                        onViewHistory = if (onViewHistory != null) { { onViewHistory(station) } } else null
                     )
                 }
             }

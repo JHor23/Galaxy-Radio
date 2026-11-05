@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
@@ -71,6 +72,8 @@ fun ExploreScreen(
     onDeleteStation: ((RadioStation) -> Unit)? = null,
     onResetCurated: (() -> Unit)? = null,
     onOpenAddStation: () -> Unit,
+    onNavigateToSaved: (() -> Unit)? = null,
+    onViewHistory: ((RadioStation) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
@@ -280,6 +283,31 @@ fun ExploreScreen(
                     }
                 }
 
+                if (onNavigateToSaved != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable(onClick = onNavigateToSaved)
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                            .testTag("explore_to_saved_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Bookmark,
+                            contentDescription = "Saved Stations",
+                            tint = GalaxyCyan,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = "Saved",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = GalaxyCyan
+                        )
+                    }
+                }
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -364,7 +392,8 @@ fun ExploreScreen(
                                     // Remove immediately from current display list
                                     stations = stations.filter { it.id != station.id }
                                 }
-                            } else null
+                            } else null,
+                            onViewHistory = if (onViewHistory != null) { { onViewHistory(station) } } else null
                         )
                     }
 

@@ -77,8 +77,8 @@ object SleepTimerManager {
                 RadioPlayerManager.updateSleepTimer(if (remaining > 0) remaining else null)
 
                 if (remaining <= 0) {
-                    // Time is up: stop radio stream smoothly
-                    RadioPlayerManager.stop(context)
+                    // Time is up: pause radio stream smoothly so user can resume anytime without force closing
+                    RadioPlayerManager.pause(context.applicationContext)
                     _timerState.value = SleepTimerState()
                     RadioPlayerManager.updateSleepTimer(null)
                     break

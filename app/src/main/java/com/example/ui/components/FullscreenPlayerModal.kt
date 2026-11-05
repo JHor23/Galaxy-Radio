@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Pause
@@ -83,6 +84,7 @@ fun FullscreenPlayerModal(
     onNavigateToEqualizer: () -> Unit,
     onNavigateToQuality: () -> Unit,
     onOpenSleepTimer: () -> Unit,
+    onOpenHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val station = playerState.currentStation ?: return
@@ -150,17 +152,53 @@ fun FullscreenPlayerModal(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val sleepSec = playerState.sleepTimerRemainingSeconds
-                    IconButton(
-                        onClick = onOpenSleepTimer,
-                        modifier = Modifier.testTag("fullscreen_sleep_timer_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Bedtime,
-                            contentDescription = "Sleep Timer",
-                            tint = if (sleepSec != null && sleepSec > 0) GalaxyCyan else GalaxyTextSecondary,
-                            modifier = Modifier.size(22.dp)
-                        )
+                    if (sleepSec != null && sleepSec > 0) {
+                        val m = sleepSec / 60
+                        val s = sleepSec % 60
+                        val countdownStr = String.format("%02d:%02d", m, s)
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = GalaxyCyan.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, GalaxyCyan),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable(onClick = onOpenSleepTimer)
+                                .testTag("fullscreen_sleep_timer_button")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Bedtime,
+                                    contentDescription = "Sleep Timer Active",
+                                    tint = GalaxyCyan,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = countdownStr,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GalaxyCyan
+                                )
+                            }
+                        }
+                    } else {
+                        IconButton(
+                            onClick = onOpenSleepTimer,
+                            modifier = Modifier.testTag("fullscreen_sleep_timer_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Bedtime,
+                                contentDescription = "Sleep Timer",
+                                tint = GalaxyTextSecondary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
+
+                    Spacer(modifier = Modifier.width(4.dp))
 
                     IconButton(
                         onClick = onToggleFavorite,
@@ -276,21 +314,37 @@ fun FullscreenPlayerModal(
                         }
                     }
 
-                    IconButton(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                            val clip = ClipData.newPlainText("Track Info", "${playerState.displayTrackTitle} - ${station.name}")
-                            clipboard?.setPrimaryClip(clip)
-                            Toast.makeText(context, "Track copied to clipboard", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.ContentCopy,
-                            contentDescription = "Copy Track",
-                            tint = GalaxyTextSecondary,
-                            modifier = Modifier.size(18.dp)
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = onOpenHistory,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("now_playing_history_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.History,
+                                contentDescription = "Station Track History",
+                                tint = GalaxyCyan,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                val clip = ClipData.newPlainText("Track Info", "${playerState.displayTrackTitle} - ${station.name}")
+                                clipboard?.setPrimaryClip(clip)
+                                Toast.makeText(context, "Track copied to clipboard", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.ContentCopy,
+                                contentDescription = "Copy Track",
+                                tint = GalaxyTextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -308,7 +362,80 @@ fun FullscreenPlayerModal(
                 TelemetryBadge(label = "QUALITY", value = playerState.audioQuality.title)
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            val sleepRemainingSec = playerState.sleepTimerRemainingSeconds
+            if (sleepRemainingSec != null && sleepRemainingSec > 0) {
+                val m = sleepRemainingSec / 60
+                val s = sleepRemainingSec % 60
+                val countdownFormatted = String.format("%02d:%02d", m, s)
+                Spacer(modifier = Modifier.height(14.dp))
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = GalaxyCyan.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, GalaxyCyan.copy(alpha = 0.55f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable(onClick = onOpenSleepTimer)
+                        .testTag("fullscreen_sleep_timer_banner")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = CircleShape,
+                                color = GalaxyCyan.copy(alpha = 0.2f),
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Bedtime,
+                                        contentDescription = "Sleep Timer Active",
+                                        tint = GalaxyCyan,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "SLEEP TIMER RUNNING",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GalaxyCyan,
+                                    letterSpacing = 1.sp
+                                )
+                                Text(
+                                    text = "Pauses radio stream in $countdownFormatted",
+                                    fontSize = 12.sp,
+                                    color = GalaxyTextPrimary
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = GalaxyVoid.copy(alpha = 0.6f),
+                            border = BorderStroke(1.dp, GalaxyCyan.copy(alpha = 0.4f))
+                        ) {
+                            Text(
+                                text = countdownFormatted,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GalaxyCyan,
+                                letterSpacing = 1.sp,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Primary Playback Controls
             Row(
@@ -514,9 +641,41 @@ fun FullscreenPlayerModal(
                     }
                 }
 
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = GalaxySurface,
+                    border = BorderStroke(1.dp, GalaxyCardBorder),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(onClick = onOpenHistory)
+                        .testTag("fullscreen_history_tile")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.History,
+                            contentDescription = null,
+                            tint = GalaxyElectricBlue,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "History",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = GalaxyTextPrimary
+                        )
+                    }
+                }
+
                 val sleepSec = playerState.sleepTimerRemainingSeconds
                 val sleepLabel = if (sleepSec != null && sleepSec > 0) {
-                    "${(sleepSec + 59) / 60}m Left"
+                    val m = sleepSec / 60
+                    val s = sleepSec % 60
+                    String.format("%02d:%02d Left", m, s)
                 } else {
                     "Sleep Timer"
                 }

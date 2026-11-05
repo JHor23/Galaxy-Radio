@@ -5,11 +5,13 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -35,8 +37,10 @@ import com.example.MainActivity
 import com.example.R
 import com.example.audio.IcyMetadataReader
 import com.example.data.crawler.AudioStreamCrawler
+import com.example.data.repository.SongHistoryRepository
 import com.example.player.PlayerStatus
 import com.example.player.RadioPlayerManager
+import com.example.sleep.SleepTimerManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,7 +52,7 @@ import kotlinx.coroutines.launch
 
 class RadioPlaybackService : Service() {
 
-    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var streamPrepareJob: Job? = null
     private var metadataJob: Job? = null
     private var statsJob: Job? = null
@@ -57,6 +61,7 @@ class RadioPlaybackService : Service() {
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSessionCompat? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -71,11 +76,25 @@ class RadioPlaybackService : Service() {
     private var sessionStartTimeMs: Long = 0L
     private var estimatedBytesTransferred: Long = 0L
     private var isMuted: Boolean = false
+    private var cachedThumbnailIcon: Bitmap? = null
+    private var songHistoryRepository: SongHistoryRepository? = null
 
     override fun onCreate() {
         super.onCreate()
+        serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+        songHistoryRepository = SongHistoryRepository.getInstance(applicationContext)
         val powerManager = getSystemService(POWER_SERVICE) as? PowerManager
         wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GalaxyRadio:WakeLock")
+
+        val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as? WifiManager
+        wifiLock = wifiManager?.createWifiLock(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            } else {
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            },
+            "GalaxyRadio:WifiLock"
+        )
 
         connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as? ConnectivityManager
         checkInitialNetwork()
@@ -83,6 +102,19 @@ class RadioPlaybackService : Service() {
 
         initializeMediaSession()
         initializePlayer()
+        observeSleepTimer()
+    }
+
+    private fun getThumbnailIcon(): Bitmap? {
+        if (cachedThumbnailIcon == null) {
+            try {
+                val raw = BitmapFactory.decodeResource(resources, R.drawable.galaxy_radio_icon)
+                cachedThumbnailIcon = if (raw != null) {
+                    Bitmap.createScaledBitmap(raw, 128, 128, true)
+                } else null
+            } catch (_: Exception) {}
+        }
+        return cachedThumbnailIcon
     }
 
     private fun checkInitialNetwork() {
@@ -204,11 +236,13 @@ class RadioPlaybackService : Service() {
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                2_500,  // minBufferMs
-                10_000, // maxBufferMs
-                1_000,  // bufferForPlaybackMs
-                2_000   // bufferForPlaybackAfterRebufferMs
+                15_000, // minBufferMs: 15s buffer prevents Bluetooth A2DP & network jitter stalls
+                45_000, // maxBufferMs: 45s maximum buffer
+                2_000,  // bufferForPlaybackMs: quick start
+                3_000   // bufferForPlaybackAfterRebufferMs: smooth rebuffer
             )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .setBackBuffer(10_000, false)
             .build()
 
         val audioAttributes = AudioAttributes.Builder()
@@ -363,15 +397,19 @@ class RadioPlaybackService : Service() {
         }
 
         override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
-            val title = mediaMetadata.title?.toString()
-            val artist = mediaMetadata.artist?.toString()
+            val title = mediaMetadata.title?.toString()?.trim()
+            val artist = mediaMetadata.artist?.toString()?.trim()
 
             if (!title.isNullOrBlank()) {
-                currentTrackTitle = title
-                currentArtist = artist ?: currentStationName
-                RadioPlayerManager.updateMetadata(currentTrackTitle, currentArtist)
-                updateMediaSessionMetadata()
-                updateNotification()
+                val effectiveArtist = if (!artist.isNullOrBlank()) artist else currentStationName
+                if (title != currentTrackTitle || effectiveArtist != currentArtist) {
+                    currentTrackTitle = title
+                    currentArtist = effectiveArtist
+                    RadioPlayerManager.updateMetadata(currentTrackTitle, currentArtist)
+                    updateMediaSessionMetadata()
+                    updateNotification()
+                    recordSongHistory(currentTrackTitle, currentArtist)
+                }
             }
         }
     }
@@ -411,11 +449,7 @@ class RadioPlaybackService : Service() {
                 currentStationName
             }
 
-            val largeIconBitmap = try {
-                BitmapFactory.decodeResource(resources, R.drawable.galaxy_radio_icon)
-            } catch (_: Exception) {
-                null
-            }
+            val iconBitmap = getThumbnailIcon()
 
             val metadata = MediaMetadataCompat.Builder()
                 .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
@@ -423,9 +457,12 @@ class RadioPlaybackService : Service() {
                 .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, currentStationName)
                 .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, title)
                 .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, artist)
-                .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, largeIconBitmap)
-                .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, largeIconBitmap)
-                .putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, largeIconBitmap)
+                .apply {
+                    if (iconBitmap != null) {
+                        putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, iconBitmap)
+                        putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, iconBitmap)
+                    }
+                }
                 .build()
 
             mediaSession?.setMetadata(metadata)
@@ -603,20 +640,39 @@ class RadioPlaybackService : Service() {
         metadataJob?.cancel()
         metadataJob = serviceScope.launch(Dispatchers.IO) {
             while (isActive) {
-                if (currentUrl.isNotBlank()) {
+                delay(30_000) // check metadata every 30 seconds as fallback to ExoPlayer's in-band ICY stream
+                if (currentUrl.isNotBlank() && player?.isPlaying == true) {
                     val (artist, title) = IcyMetadataReader.fetchLiveMetadata(currentUrl)
                     if (!title.isNullOrBlank()) {
-                        launch(Dispatchers.Main) {
-                            currentTrackTitle = title
-                            currentArtist = if (!artist.isNullOrBlank()) artist else currentStationName
-                            RadioPlayerManager.updateMetadata(currentTrackTitle, currentArtist)
-                            updateMediaSessionMetadata()
-                            updateNotification()
+                        val newTitle = title.trim()
+                        val newArtist = if (!artist.isNullOrBlank()) artist.trim() else currentStationName
+                        if (newTitle != currentTrackTitle || newArtist != currentArtist) {
+                            launch(Dispatchers.Main) {
+                                currentTrackTitle = newTitle
+                                currentArtist = newArtist
+                                RadioPlayerManager.updateMetadata(currentTrackTitle, currentArtist)
+                                updateMediaSessionMetadata()
+                                updateNotification()
+                                recordSongHistory(currentTrackTitle, currentArtist)
+                            }
                         }
                     }
                 }
-                delay(12_000) // check metadata every 12 seconds
             }
+        }
+    }
+
+    private fun recordSongHistory(title: String, artist: String) {
+        val station = RadioPlayerManager.uiState.value.currentStation
+        val stationId = station?.id ?: currentUrl
+        serviceScope.launch {
+            songHistoryRepository?.recordSong(
+                stationId = stationId,
+                stationName = currentStationName,
+                streamUrl = currentUrl,
+                trackTitle = title,
+                artist = artist
+            )
         }
     }
 
@@ -649,6 +705,27 @@ class RadioPlaybackService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (_: Exception) {}
+    }
+
+    private fun observeSleepTimer() {
+        serviceScope.launch {
+            var lastActive = false
+            var lastSecond = -1L
+            SleepTimerManager.timerState.collect { state ->
+                val isActive = state.isActive && state.remainingSeconds > 0
+                if (isActive != lastActive) {
+                    lastActive = isActive
+                    lastSecond = state.remainingSeconds
+                    updateNotification()
+                } else if (isActive) {
+                    // Update notification periodically so formatted text updates, or on critical seconds
+                    if (kotlin.math.abs(lastSecond - state.remainingSeconds) >= 5 || state.remainingSeconds <= 10) {
+                        lastSecond = state.remainingSeconds
+                        updateNotification()
+                    }
+                }
+            }
+        }
     }
 
     private fun updateNotification() {
@@ -712,26 +789,23 @@ class RadioPlaybackService : Service() {
             currentStationName
         }
 
-        val sleepSec = RadioPlayerManager.uiState.value.sleepTimerRemainingSeconds
-        val sleepNotice = if (sleepSec != null && sleepSec > 0) {
-            val min = (sleepSec + 59) / 60
-            " • ⏳ Sleep in ${min}m"
+        val timerState = SleepTimerManager.timerState.value
+        val isTimerActive = timerState.isActive && timerState.remainingSeconds > 0
+        val sleepFormatted = if (isTimerActive) timerState.formattedRemaining else ""
+
+        val sleepNotice = if (isTimerActive) {
+            " • ⏳ Sleep in $sleepFormatted"
         } else ""
 
         val muteNotice = if (isMuted) " • 🔇 Muted" else ""
 
-        val subText = if (sleepSec != null && sleepSec > 0) {
-            val min = (sleepSec + 59) / 60
-            "Mini Player • Sleep ${min}m"
+        val subText = if (isTimerActive) {
+            "Sleep Timer • ⏳ $sleepFormatted"
         } else {
-            "Mini Player • Live Stream"
+            "Live Stream"
         }
 
-        val largeIconBitmap = try {
-            BitmapFactory.decodeResource(resources, R.drawable.galaxy_radio_icon)
-        } catch (_: Exception) {
-            null
-        }
+        val iconBitmap = getThumbnailIcon()
 
         val mediaStyle = MediaStyle()
             .setMediaSession(mediaSession?.sessionToken)
@@ -739,11 +813,11 @@ class RadioPlaybackService : Service() {
             .setShowCancelButton(true)
             .setCancelButtonIntent(stopActionIntent)
 
-        return NotificationCompat.Builder(this, GalaxyRadioApplication.CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, GalaxyRadioApplication.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_radio_notification)
             .apply {
-                if (largeIconBitmap != null) {
-                    setLargeIcon(largeIconBitmap)
+                if (iconBitmap != null) {
+                    setLargeIcon(iconBitmap)
                 }
             }
             .setContentTitle(title)
@@ -755,6 +829,22 @@ class RadioPlaybackService : Service() {
             .setColor(0xFF00F2FE.toInt()) // Cyan accent color
             .setColorized(true)
             .setOngoing(isPlaying)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+
+        if (isTimerActive && timerState.endTimestampMs > 0) {
+            builder.setShowWhen(true)
+            builder.setWhen(timerState.endTimestampMs)
+            builder.setUsesChronometer(true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                builder.setChronometerCountDown(true)
+            }
+        } else {
+            builder.setShowWhen(false)
+            builder.setUsesChronometer(false)
+        }
+
+        return builder
             // Action 0: Previous station
             .addAction(
                 android.R.drawable.ic_media_previous,
@@ -805,11 +895,17 @@ class RadioPlaybackService : Service() {
         if (wakeLock?.isHeld != true) {
             wakeLock?.acquire(3 * 60 * 60 * 1000L) // 3 hours timeout safety
         }
+        if (wifiLock?.isHeld != true) {
+            try { wifiLock?.acquire() } catch (_: Exception) {}
+        }
     }
 
     private fun releaseWakeLock() {
         if (wakeLock?.isHeld == true) {
             wakeLock?.release()
+        }
+        if (wifiLock?.isHeld == true) {
+            try { wifiLock?.release() } catch (_: Exception) {}
         }
     }
 
@@ -824,6 +920,7 @@ class RadioPlaybackService : Service() {
         mediaSession?.release()
         mediaSession = null
         serviceScope.cancel()
+        cachedThumbnailIcon = null
         super.onDestroy()
     }
 
