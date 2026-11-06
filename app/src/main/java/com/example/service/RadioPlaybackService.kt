@@ -49,6 +49,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class RadioPlaybackService : Service() {
 
@@ -241,8 +242,6 @@ class RadioPlaybackService : Service() {
                 2_000,  // bufferForPlaybackMs: quick start
                 3_000   // bufferForPlaybackAfterRebufferMs: smooth rebuffer
             )
-            .setPrioritizeTimeOverSizeThresholds(true)
-            .setBackBuffer(10_000, false)
             .build()
 
         val audioAttributes = AudioAttributes.Builder()
@@ -638,16 +637,25 @@ class RadioPlaybackService : Service() {
 
     private fun startIcyMetadataPolling() {
         metadataJob?.cancel()
-        metadataJob = serviceScope.launch(Dispatchers.IO) {
-            while (isActive) {
-                delay(30_000) // check metadata every 30 seconds as fallback to ExoPlayer's in-band ICY stream
-                if (currentUrl.isNotBlank() && player?.isPlaying == true) {
-                    val (artist, title) = IcyMetadataReader.fetchLiveMetadata(currentUrl)
-                    if (!title.isNullOrBlank()) {
-                        val newTitle = title.trim()
-                        val newArtist = if (!artist.isNullOrBlank()) artist.trim() else currentStationName
-                        if (newTitle != currentTrackTitle || newArtist != currentArtist) {
-                            launch(Dispatchers.Main) {
+        metadataJob = serviceScope.launch(Dispatchers.Main) {
+            try {
+                while (isActive) {
+                    delay(30_000)
+                    // Safely check player status on Main looper thread to prevent IllegalStateException
+                    val isAudioPlaying = player?.isPlaying == true
+                    val activeUrl = currentUrl
+                    if (activeUrl.isNotBlank() && isAudioPlaying) {
+                        val (artist, title) = withContext(Dispatchers.IO) {
+                            try {
+                                IcyMetadataReader.fetchLiveMetadata(activeUrl)
+                            } catch (_: Throwable) {
+                                null to null
+                            }
+                        }
+                        if (!title.isNullOrBlank()) {
+                            val newTitle = title.trim()
+                            val newArtist = if (!artist.isNullOrBlank()) artist.trim() else currentStationName
+                            if (newTitle != currentTrackTitle || newArtist != currentArtist) {
                                 currentTrackTitle = newTitle
                                 currentArtist = newArtist
                                 RadioPlayerManager.updateMetadata(currentTrackTitle, currentArtist)
@@ -658,7 +666,7 @@ class RadioPlaybackService : Service() {
                         }
                     }
                 }
-            }
+            } catch (_: Throwable) {}
         }
     }
 
@@ -666,29 +674,33 @@ class RadioPlaybackService : Service() {
         val station = RadioPlayerManager.uiState.value.currentStation
         val stationId = station?.id ?: currentUrl
         serviceScope.launch {
-            songHistoryRepository?.recordSong(
-                stationId = stationId,
-                stationName = currentStationName,
-                streamUrl = currentUrl,
-                trackTitle = title,
-                artist = artist
-            )
+            try {
+                songHistoryRepository?.recordSong(
+                    stationId = stationId,
+                    stationName = currentStationName,
+                    streamUrl = currentUrl,
+                    trackTitle = title,
+                    artist = artist
+                )
+            } catch (_: Throwable) {}
         }
     }
 
     private fun startStatsTracker() {
         statsJob?.cancel()
         statsJob = serviceScope.launch {
-            while (isActive) {
-                if (player?.isPlaying == true) {
-                    val elapsedSec = (System.currentTimeMillis() - sessionStartTimeMs) / 1000
-                    val quality = RadioPlayerManager.uiState.value.audioQuality
-                    val bytesPerSec = (quality.targetBitrateKbps * 1024) / 8
-                    estimatedBytesTransferred += bytesPerSec
-                    RadioPlayerManager.updateStats(estimatedBytesTransferred, elapsedSec)
+            try {
+                while (isActive) {
+                    if (player?.isPlaying == true) {
+                        val elapsedSec = (System.currentTimeMillis() - sessionStartTimeMs) / 1000
+                        val quality = RadioPlayerManager.uiState.value.audioQuality
+                        val bytesPerSec = (quality.targetBitrateKbps * 1024) / 8
+                        estimatedBytesTransferred += bytesPerSec
+                        RadioPlayerManager.updateStats(estimatedBytesTransferred, elapsedSec)
+                    }
+                    delay(1000)
                 }
-                delay(1000)
-            }
+            } catch (_: Throwable) {}
         }
     }
 
@@ -709,22 +721,24 @@ class RadioPlaybackService : Service() {
 
     private fun observeSleepTimer() {
         serviceScope.launch {
-            var lastActive = false
-            var lastSecond = -1L
-            SleepTimerManager.timerState.collect { state ->
-                val isActive = state.isActive && state.remainingSeconds > 0
-                if (isActive != lastActive) {
-                    lastActive = isActive
-                    lastSecond = state.remainingSeconds
-                    updateNotification()
-                } else if (isActive) {
-                    // Update notification periodically so formatted text updates, or on critical seconds
-                    if (kotlin.math.abs(lastSecond - state.remainingSeconds) >= 5 || state.remainingSeconds <= 10) {
+            try {
+                var lastActive = false
+                var lastSecond = -1L
+                SleepTimerManager.timerState.collect { state ->
+                    val isActive = state.isActive && state.remainingSeconds > 0
+                    if (isActive != lastActive) {
+                        lastActive = isActive
                         lastSecond = state.remainingSeconds
                         updateNotification()
+                    } else if (isActive) {
+                        // Update notification periodically so formatted text updates, or on critical seconds
+                        if (kotlin.math.abs(lastSecond - state.remainingSeconds) >= 5 || state.remainingSeconds <= 10) {
+                            lastSecond = state.remainingSeconds
+                            updateNotification()
+                        }
                     }
                 }
-            }
+            } catch (_: Throwable) {}
         }
     }
 

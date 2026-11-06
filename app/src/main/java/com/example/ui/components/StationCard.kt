@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,16 +21,23 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +54,7 @@ import com.example.model.RadioStation
 import com.example.ui.theme.GalaxyCardBorder
 import com.example.ui.theme.GalaxyCyan
 import com.example.ui.theme.GalaxyElectricBlue
+import com.example.ui.theme.GalaxyError
 import com.example.ui.theme.GalaxySurface
 import com.example.ui.theme.GalaxySurfaceVariant
 import com.example.ui.theme.GalaxyTextMuted
@@ -158,6 +167,15 @@ fun StationCard(
                         modifier = Modifier.weight(1f, fill = false)
                     )
 
+                    if (station.isFavorite) {
+                        Icon(
+                            imageVector = Icons.Filled.Favorite,
+                            contentDescription = "Favorited",
+                            tint = GalaxyCyan,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+
                     if (station.isCustom) {
                         Surface(
                             shape = RoundedCornerShape(4.dp),
@@ -205,57 +223,112 @@ fun StationCard(
                 }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
 
-            // Actions: Favorite & Play/Pause
+            // Actions: Tiered Menu (3 dots) & Play/Pause (left in place)
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onToggleFavorite,
-                    modifier = Modifier
-                        .size(38.dp)
-                        .testTag("favorite_button_${station.id}")
-                ) {
-                    Icon(
-                        imageVector = if (station.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                        contentDescription = if (station.isFavorite) "Remove Favorite" else "Add Favorite",
-                        tint = if (station.isFavorite) GalaxyCyan else GalaxyTextMuted,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                var menuExpanded by remember { mutableStateOf(false) }
 
-                if (onViewHistory != null) {
+                Box {
                     IconButton(
-                        onClick = onViewHistory,
+                        onClick = { menuExpanded = true },
                         modifier = Modifier
                             .size(38.dp)
-                            .testTag("history_button_${station.id}")
+                            .testTag("station_menu_button_${station.id}")
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.History,
-                            contentDescription = "Station History",
-                            tint = GalaxyTextMuted,
+                            imageVector = Icons.Filled.MoreVert,
+                            contentDescription = "Station options",
+                            tint = GalaxyTextSecondary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                }
 
-                if (onDeleteStation != null) {
-                    IconButton(
-                        onClick = onDeleteStation,
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
                         modifier = Modifier
-                            .size(38.dp)
-                            .testTag("delete_button_${station.id}")
+                            .background(GalaxySurface)
+                            .border(1.dp, GalaxyCardBorder, RoundedCornerShape(12.dp))
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Delete,
-                            contentDescription = if (station.isCustom) "Delete Custom Station" else "Delete Station",
-                            tint = GalaxyTextMuted,
-                            modifier = Modifier.size(20.dp)
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = if (station.isFavorite) "Remove from Favorites" else "Add to Favorites",
+                                    color = GalaxyTextPrimary,
+                                    fontSize = 14.sp
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (station.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                    contentDescription = null,
+                                    tint = if (station.isFavorite) GalaxyCyan else GalaxyTextMuted,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onToggleFavorite()
+                            },
+                            modifier = Modifier.testTag("favorite_button_${station.id}")
                         )
+
+                        if (onViewHistory != null) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "Station History",
+                                        color = GalaxyTextPrimary,
+                                        fontSize = 14.sp
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.History,
+                                        contentDescription = null,
+                                        tint = GalaxyCyan,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onViewHistory()
+                                },
+                                modifier = Modifier.testTag("history_button_${station.id}")
+                            )
+                        }
+
+                        if (onDeleteStation != null) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = if (station.isCustom) "Delete Custom Stream" else "Delete Station",
+                                        color = GalaxyError,
+                                        fontSize = 14.sp
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.Delete,
+                                        contentDescription = null,
+                                        tint = GalaxyError,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDeleteStation()
+                                },
+                                modifier = Modifier.testTag("delete_button_${station.id}")
+                            )
+                        }
                     }
                 }
+
+                Spacer(modifier = Modifier.width(4.dp))
 
                 // Play / Pause / Buffering button
                 Surface(

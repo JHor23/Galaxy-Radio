@@ -15,6 +15,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,12 +38,15 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.outlined.Equalizer
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Radio
 import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
@@ -493,7 +497,10 @@ fun GalaxyTopBar(
 
             // Top Actions
             Row(verticalAlignment = Alignment.CenterVertically) {
+                var menuExpanded by remember { mutableStateOf(false) }
                 val sleepSec = playerState.sleepTimerRemainingSeconds
+
+                // Active sleep timer countdown chip
                 if (sleepSec != null && sleepSec > 0) {
                     val m = sleepSec / 60
                     val s = sleepSec % 60
@@ -527,52 +534,9 @@ fun GalaxyTopBar(
                             )
                         }
                     }
-                } else {
-                    Surface(
-                        shape = CircleShape,
-                        color = GalaxySurface,
-                        border = BorderStroke(1.dp, GalaxyCardBorder),
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .clickable(onClick = onOpenSleepTimer)
-                            .padding(end = 0.dp)
-                            .testTag("top_bar_sleep_timer")
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Filled.Bedtime,
-                                contentDescription = "Sleep Timer",
-                                tint = GalaxyTextSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
                 }
 
-                Surface(
-                    shape = CircleShape,
-                    color = GalaxySurface,
-                    border = BorderStroke(1.dp, GalaxyCardBorder),
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .clickable(onClick = onOpenHistory)
-                        .padding(end = 0.dp)
-                        .testTag("top_bar_history")
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Filled.History,
-                            contentDescription = "Station History",
-                            tint = GalaxyCyan,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-
+                // "ON AIR" button stays in its location
                 if (playerState.isPlaying) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -605,22 +569,110 @@ fun GalaxyTopBar(
                     }
                 }
 
-                Surface(
-                    shape = CircleShape,
-                    color = GalaxySurface,
-                    border = BorderStroke(1.dp, GalaxyCardBorder),
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .clickable(onClick = onOpenAddStation)
-                        .testTag("top_bar_add_station")
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Filled.Add,
-                            contentDescription = "Add custom station",
-                            tint = GalaxyCyan,
-                            modifier = Modifier.size(18.dp)
+                // Tiered Menu (3 dots) for Sleep Timer, History, and Add Custom Stream
+                Box {
+                    Surface(
+                        shape = CircleShape,
+                        color = GalaxySurface,
+                        border = BorderStroke(1.dp, GalaxyCardBorder),
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = { menuExpanded = true })
+                            .testTag("top_bar_menu_button")
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Filled.MoreVert,
+                                contentDescription = "More actions",
+                                tint = GalaxyCyan,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                        modifier = Modifier
+                            .background(GalaxySurface)
+                            .border(1.dp, GalaxyCardBorder, RoundedCornerShape(12.dp))
+                    ) {
+                        val sleepCountdownText = if (sleepSec != null && sleepSec > 0) {
+                            val m = sleepSec / 60
+                            val s = sleepSec % 60
+                            String.format("Sleep Timer (%02d:%02d)", m, s)
+                        } else {
+                            "Sleep Timer"
+                        }
+
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = sleepCountdownText,
+                                    color = GalaxyTextPrimary,
+                                    fontSize = 14.sp
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Bedtime,
+                                    contentDescription = null,
+                                    tint = if (sleepSec != null && sleepSec > 0) GalaxyCyan else GalaxyTextSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onOpenSleepTimer()
+                            },
+                            modifier = Modifier.testTag("top_bar_sleep_timer")
+                        )
+
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "Station History",
+                                    color = GalaxyTextPrimary,
+                                    fontSize = 14.sp
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.History,
+                                    contentDescription = null,
+                                    tint = GalaxyCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onOpenHistory()
+                            },
+                            modifier = Modifier.testTag("top_bar_history")
+                        )
+
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "Add Custom Stream",
+                                    color = GalaxyTextPrimary,
+                                    fontSize = 14.sp
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Add,
+                                    contentDescription = null,
+                                    tint = GalaxyCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onOpenAddStation()
+                            },
+                            modifier = Modifier.testTag("top_bar_add_station")
                         )
                     }
                 }
