@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -104,7 +105,7 @@ fun MiniPlayerBar(
                         color = GalaxyTextPrimary
                     ),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
                 )
 
                 Row(
@@ -118,8 +119,9 @@ fun MiniPlayerBar(
                             fontSize = 11.sp
                         ),
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .basicMarquee(iterations = Int.MAX_VALUE)
                     )
                     val sleepSec = playerState.sleepTimerRemainingSeconds
                     if (sleepSec != null && sleepSec > 0) {

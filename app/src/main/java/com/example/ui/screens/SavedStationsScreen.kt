@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.repository.RadioStationRepository
@@ -157,15 +158,20 @@ fun SavedStationsScreen(
 
         // Header Action Row
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (selectedTab == 0) "Custom Radio Streams" else "Starred Galaxy Stations",
-                fontSize = 14.sp,
+                text = if (selectedTab == 0) "Custom Streams" else "Favorites",
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = GalaxyTextSecondary
+                color = GalaxyTextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
             )
 
             Row(
@@ -178,26 +184,28 @@ fun SavedStationsScreen(
                         color = GalaxyCyan.copy(alpha = 0.15f),
                         border = BorderStroke(1.dp, GalaxyCyan.copy(alpha = 0.4f)),
                         modifier = Modifier
+                            .height(32.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .clickable { onResetCurated() }
                             .testTag("saved_screen_restore_curated_button")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.RestartAlt,
                                 contentDescription = "Restore Curated Stations",
                                 tint = GalaxyCyan,
-                                modifier = Modifier.size(15.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Restore Curated (${hiddenCuratedIds.size})",
+                                text = "Restore (${hiddenCuratedIds.size})",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = GalaxyCyan
+                                color = GalaxyCyan,
+                                maxLines = 1
                             )
                         }
                     }
@@ -209,26 +217,28 @@ fun SavedStationsScreen(
                         color = GalaxyCyan.copy(alpha = 0.15f),
                         border = BorderStroke(1.dp, GalaxyCyan.copy(alpha = 0.4f)),
                         modifier = Modifier
+                            .height(32.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .clickable(onClick = onNavigateToExplore)
                             .testTag("saved_to_explore_button")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Radio,
                                 contentDescription = "Explore Stations",
                                 tint = GalaxyCyan,
-                                modifier = Modifier.size(15.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "Explore",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = GalaxyCyan
+                                color = GalaxyCyan,
+                                maxLines = 1
                             )
                         }
                     }
@@ -240,26 +250,28 @@ fun SavedStationsScreen(
                         color = GalaxyCyan.copy(alpha = 0.15f),
                         border = BorderStroke(1.dp, GalaxyCyan.copy(alpha = 0.4f)),
                         modifier = Modifier
+                            .height(32.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .clickable(onClick = onOpenAddStation)
                             .testTag("saved_screen_add_button")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Add,
                                 contentDescription = null,
                                 tint = GalaxyCyan,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Add Stream URL",
+                                text = "Add Stream",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = GalaxyCyan
+                                color = GalaxyCyan,
+                                maxLines = 1
                             )
                         }
                     }
