@@ -15,6 +15,7 @@ class GalaxyRadioApplication : Application() {
         super.onCreate()
         instance = this
         database = RadioDatabase.getInstance(this)
+        com.example.player.RadioPlayerManager.init(this)
         createNotificationChannel()
     }
 

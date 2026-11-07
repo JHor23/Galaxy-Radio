@@ -104,6 +104,17 @@ class RadioPlaybackService : Service() {
         initializeMediaSession()
         initializePlayer()
         observeSleepTimer()
+
+        // Restore saved station metadata if available to prevent blank states after process death
+        try {
+            val prefs = getSharedPreferences("galaxy_radio_player_state", MODE_PRIVATE)
+            val savedUrl = prefs.getString("last_station_stream_url", "").orEmpty()
+            if (savedUrl.isNotBlank()) {
+                currentUrl = savedUrl
+                currentStationName = prefs.getString("last_station_name", "Galaxy Radio") ?: "Galaxy Radio"
+                currentGenre = prefs.getString("last_station_genre", "Live Space Radio") ?: "Live Space Radio"
+            }
+        } catch (_: Exception) {}
     }
 
     private fun getThumbnailIcon(): Bitmap? {
@@ -165,14 +176,31 @@ class RadioPlaybackService : Service() {
         } catch (_: Exception) {}
     }
 
-    private fun resumeCurrentStationOrPlay() {
-        if (player?.playbackState == Player.STATE_IDLE || player?.currentMediaItem == null) {
-            if (currentUrl.isNotBlank()) {
-                startStreaming(currentUrl, currentStationName, currentGenre)
-            }
-        } else {
-            player?.play()
+    private fun resumeCurrentStationOrPlay(url: String = "", name: String = "", genre: String = "") {
+        val targetUrl = url.ifBlank { currentUrl }.ifBlank {
+            try {
+                getSharedPreferences("galaxy_radio_player_state", MODE_PRIVATE)
+                    .getString("last_station_stream_url", "") ?: ""
+            } catch (_: Exception) { "" }
         }
+        val targetName = name.ifBlank { currentStationName }.ifBlank {
+            try {
+                getSharedPreferences("galaxy_radio_player_state", MODE_PRIVATE)
+                    .getString("last_station_name", "Galaxy Radio") ?: "Galaxy Radio"
+            } catch (_: Exception) { "Galaxy Radio" }
+        }
+        val targetGenre = genre.ifBlank { currentGenre }.ifBlank {
+            try {
+                getSharedPreferences("galaxy_radio_player_state", MODE_PRIVATE)
+                    .getString("last_station_genre", "Live Stream") ?: "Live Stream"
+            } catch (_: Exception) { "Live Stream" }
+        }
+
+        if (targetUrl.isBlank()) return
+
+        // For live radio streams, resuming after a phone call or background pause
+        // must always re-establish a fresh live connection instead of reading from a dead TCP socket
+        startStreaming(targetUrl, targetName, targetGenre)
     }
 
     private fun initializeMediaSession() {
@@ -483,12 +511,15 @@ class RadioPlaybackService : Service() {
                 startStreaming(url, name, genre)
             }
             ACTION_TOGGLE -> {
+                val url = intent.getStringExtra(EXTRA_STREAM_URL).orEmpty()
+                val name = intent.getStringExtra(EXTRA_STATION_NAME).orEmpty()
+                val genre = intent.getStringExtra(EXTRA_STATION_GENRE).orEmpty()
                 if (player?.isPlaying == true) {
                     wasPlayingBeforeNetworkLoss = false
                     reconnectJob?.cancel()
                     player?.pause()
                 } else {
-                    resumeCurrentStationOrPlay()
+                    resumeCurrentStationOrPlay(url, name, genre)
                 }
             }
             ACTION_PAUSE -> {
@@ -497,7 +528,10 @@ class RadioPlaybackService : Service() {
                 player?.pause()
             }
             ACTION_RESUME -> {
-                resumeCurrentStationOrPlay()
+                val url = intent.getStringExtra(EXTRA_STREAM_URL).orEmpty()
+                val name = intent.getStringExtra(EXTRA_STATION_NAME).orEmpty()
+                val genre = intent.getStringExtra(EXTRA_STATION_GENRE).orEmpty()
+                resumeCurrentStationOrPlay(url, name, genre)
             }
             ACTION_NEXT -> {
                 wasPlayingBeforeNetworkLoss = false
@@ -554,6 +588,15 @@ class RadioPlaybackService : Service() {
         currentTrackTitle = currentStationName
         currentArtist = currentGenre
         sessionStartTimeMs = System.currentTimeMillis()
+
+        try {
+            val prefs = getSharedPreferences("galaxy_radio_player_state", MODE_PRIVATE)
+            prefs.edit()
+                .putString("last_station_stream_url", currentUrl)
+                .putString("last_station_name", currentStationName)
+                .putString("last_station_genre", currentGenre)
+                .apply()
+        } catch (_: Exception) {}
 
         initializePlayer()
         RadioPlayerManager.updateMetadata(currentTrackTitle, currentArtist)
@@ -771,7 +814,12 @@ class RadioPlaybackService : Service() {
         val toggleActionIntent = PendingIntent.getService(
             this,
             1,
-            Intent(this, RadioPlaybackService::class.java).apply { action = ACTION_TOGGLE },
+            Intent(this, RadioPlaybackService::class.java).apply {
+                action = ACTION_TOGGLE
+                putExtra(EXTRA_STREAM_URL, currentUrl)
+                putExtra(EXTRA_STATION_NAME, currentStationName)
+                putExtra(EXTRA_STATION_GENRE, currentGenre)
+            },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 

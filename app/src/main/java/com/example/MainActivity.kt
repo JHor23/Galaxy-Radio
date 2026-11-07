@@ -112,6 +112,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        RadioPlayerManager.init(this)
 
         val app = application as GalaxyRadioApplication
         equalizerManager = EqualizerManager(this)

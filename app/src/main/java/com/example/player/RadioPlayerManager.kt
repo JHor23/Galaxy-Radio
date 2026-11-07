@@ -60,10 +60,37 @@ data class PlayerUiState(
 
 object RadioPlayerManager {
 
+    private const val PREFS_NAME = "galaxy_radio_player_state"
+    private const val KEY_STATION_ID = "last_station_id"
+    private const val KEY_STATION_NAME = "last_station_name"
+    private const val KEY_STATION_STREAM_URL = "last_station_stream_url"
+    private const val KEY_STATION_GENRE = "last_station_genre"
+    private const val KEY_STATION_FAVICON = "last_station_favicon"
+    private const val KEY_STATION_BITRATE = "last_station_bitrate"
+    private const val KEY_STATION_IS_CUSTOM = "last_station_is_custom"
+    private const val KEY_STATION_IS_FAVORITE = "last_station_is_favorite"
+
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
+    fun init(context: Context) {
+        if (_uiState.value.currentStation == null) {
+            val restored = getPersistedStation(context)
+            if (restored != null) {
+                _uiState.update {
+                    it.copy(
+                        currentStation = restored,
+                        status = PlayerStatus.PAUSED,
+                        liveTrackTitle = restored.name,
+                        liveArtist = restored.genre
+                    )
+                }
+            }
+        }
+    }
+
     fun playStation(context: Context, station: RadioStation) {
+        persistStation(context, station)
         _uiState.update {
             it.copy(
                 currentStation = station,
@@ -84,19 +111,19 @@ object RadioPlayerManager {
 
     fun togglePlayPause(context: Context) {
         val current = _uiState.value
-        val station = current.currentStation ?: return
+        val station = current.currentStation ?: getPersistedStation(context) ?: return
 
-        if (current.status == PlayerStatus.ERROR || current.status == PlayerStatus.IDLE) {
-            playStation(context, station)
+        if (current.status == PlayerStatus.PLAYING) {
+            pause(context)
         } else {
-            val intent = Intent(context, RadioPlaybackService::class.java).apply {
-                action = RadioPlaybackService.ACTION_TOGGLE
-            }
-            startService(context, intent)
+            // For live radio streams, resuming after a pause, phone call, or app switch
+            // must reconnect cleanly to the live broadcast with full station details.
+            playStation(context, station)
         }
     }
 
     fun pause(context: Context) {
+        _uiState.update { it.copy(status = PlayerStatus.PAUSED) }
         val intent = Intent(context, RadioPlaybackService::class.java).apply {
             action = RadioPlaybackService.ACTION_PAUSE
         }
@@ -105,16 +132,8 @@ object RadioPlayerManager {
 
     fun resume(context: Context) {
         val current = _uiState.value
-        val station = current.currentStation ?: return
-
-        if (current.status == PlayerStatus.ERROR || current.status == PlayerStatus.IDLE) {
-            playStation(context, station)
-        } else {
-            val intent = Intent(context, RadioPlaybackService::class.java).apply {
-                action = RadioPlaybackService.ACTION_RESUME
-            }
-            startService(context, intent)
-        }
+        val station = current.currentStation ?: getPersistedStation(context) ?: return
+        playStation(context, station)
     }
 
     fun stop(context: Context) {
@@ -127,6 +146,49 @@ object RadioPlayerManager {
                 status = PlayerStatus.IDLE,
                 errorMessage = null
             )
+        }
+    }
+
+    private fun persistStation(context: Context, station: RadioStation) {
+        try {
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit()
+                .putString(KEY_STATION_ID, station.id)
+                .putString(KEY_STATION_NAME, station.name)
+                .putString(KEY_STATION_STREAM_URL, station.streamUrl)
+                .putString(KEY_STATION_GENRE, station.genre)
+                .putString(KEY_STATION_FAVICON, station.faviconUrl.orEmpty())
+                .putInt(KEY_STATION_BITRATE, station.bitrate)
+                .putBoolean(KEY_STATION_IS_CUSTOM, station.isCustom)
+                .putBoolean(KEY_STATION_IS_FAVORITE, station.isFavorite)
+                .apply()
+        } catch (_: Exception) {}
+    }
+
+    fun getPersistedStation(context: Context): RadioStation? {
+        return try {
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val streamUrl = prefs.getString(KEY_STATION_STREAM_URL, null) ?: return null
+            val id = prefs.getString(KEY_STATION_ID, streamUrl) ?: streamUrl
+            val name = prefs.getString(KEY_STATION_NAME, "Galaxy Radio") ?: "Galaxy Radio"
+            val genre = prefs.getString(KEY_STATION_GENRE, "Live Radio") ?: "Live Radio"
+            val favicon = prefs.getString(KEY_STATION_FAVICON, null)?.ifBlank { null }
+            val bitrate = prefs.getInt(KEY_STATION_BITRATE, 128)
+            val isCustom = prefs.getBoolean(KEY_STATION_IS_CUSTOM, false)
+            val isFavorite = prefs.getBoolean(KEY_STATION_IS_FAVORITE, false)
+
+            RadioStation(
+                id = id,
+                name = name,
+                streamUrl = streamUrl,
+                genre = genre,
+                faviconUrl = favicon,
+                bitrate = bitrate,
+                isCustom = isCustom,
+                isFavorite = isFavorite
+            )
+        } catch (_: Exception) {
+            null
         }
     }
 

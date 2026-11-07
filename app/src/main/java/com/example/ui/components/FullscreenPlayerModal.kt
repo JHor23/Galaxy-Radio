@@ -107,14 +107,16 @@ fun FullscreenPlayerModal(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Top Nav Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
             ) {
                 IconButton(
                     onClick = onDismiss,
-                    modifier = Modifier.testTag("dismiss_fullscreen_player")
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .testTag("dismiss_fullscreen_player")
                 ) {
                     Icon(
                         imageVector = Icons.Filled.KeyboardArrowDown,
@@ -127,7 +129,8 @@ fun FullscreenPlayerModal(
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = GalaxySurfaceVariant,
-                    border = BorderStroke(1.dp, GalaxyCyan.copy(alpha = 0.3f))
+                    border = BorderStroke(1.dp, GalaxyCyan.copy(alpha = 0.3f)),
+                    modifier = Modifier.align(Alignment.Center)
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -150,7 +153,10 @@ fun FullscreenPlayerModal(
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     val sleepSec = playerState.sleepTimerRemainingSeconds
                     if (sleepSec != null && sleepSec > 0) {
                         val m = sleepSec / 60
@@ -612,18 +618,23 @@ fun FullscreenPlayerModal(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // 1. Equalizer
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = GalaxySurface,
                     border = BorderStroke(1.dp, GalaxyCardBorder),
                     modifier = Modifier
                         .weight(1f)
+                        .height(64.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .clickable(onClick = onNavigateToEqualizer)
                 ) {
                     Column(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Equalizer,
@@ -636,24 +647,31 @@ fun FullscreenPlayerModal(
                             text = "Equalizer",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
-                            color = GalaxyTextPrimary
+                            color = GalaxyTextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
+                // 2. History
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = GalaxySurface,
                     border = BorderStroke(1.dp, GalaxyCardBorder),
                     modifier = Modifier
                         .weight(1f)
+                        .height(64.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .clickable(onClick = onOpenHistory)
                         .testTag("fullscreen_history_tile")
                 ) {
                     Column(
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
                         Icon(
                             imageVector = Icons.Filled.History,
@@ -666,18 +684,21 @@ fun FullscreenPlayerModal(
                             text = "History",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
-                            color = GalaxyTextPrimary
+                            color = GalaxyTextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
+                // 3. Sleep Timer
                 val sleepSec = playerState.sleepTimerRemainingSeconds
                 val sleepLabel = if (sleepSec != null && sleepSec > 0) {
                     val m = sleepSec / 60
                     val s = sleepSec % 60
-                    String.format("%02d:%02d Left", m, s)
+                    String.format("%02d:%02d", m, s)
                 } else {
-                    "Sleep Timer"
+                    "Sleep"
                 }
 
                 Surface(
@@ -686,12 +707,17 @@ fun FullscreenPlayerModal(
                     border = BorderStroke(1.dp, if (sleepSec != null && sleepSec > 0) GalaxyCyan else GalaxyCardBorder),
                     modifier = Modifier
                         .weight(1f)
+                        .height(64.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .clickable(onClick = onOpenSleepTimer)
+                        .testTag("fullscreen_bottom_sleep_timer")
                 ) {
                     Column(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Bedtime,
@@ -704,23 +730,30 @@ fun FullscreenPlayerModal(
                             text = sleepLabel,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
-                            color = if (sleepSec != null && sleepSec > 0) GalaxyCyan else GalaxyTextPrimary
+                            color = if (sleepSec != null && sleepSec > 0) GalaxyCyan else GalaxyTextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
+                // 4. Quality
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = GalaxySurface,
                     border = BorderStroke(1.dp, GalaxyCardBorder),
                     modifier = Modifier
                         .weight(1f)
+                        .height(64.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .clickable(onClick = onNavigateToQuality)
                 ) {
                     Column(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
                         Icon(
                             imageVector = Icons.Filled.NetworkCheck,
@@ -733,7 +766,9 @@ fun FullscreenPlayerModal(
                             text = "Quality",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
-                            color = GalaxyTextPrimary
+                            color = GalaxyTextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
