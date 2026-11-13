@@ -9,9 +9,12 @@ Whether you're tuning into live global broadcasts, managing custom frequency str
 ## ✨ Key Features
 
 * 📻 **Cosmic URL Bar & Station Discovery:** Instantly search and explore diverse global streams across genres like Ambient, Space, Synthwave, and Lofi with dedicated preset selectors and quick-refresh controls.
+* ➕ **Custom Station Management:** Easily add, save, and manage your own custom streaming URLs and favorite frequencies directly within the app
 * 📊 **Live Stream Data Meter:** Real-time diagnostics tracking your data consumed, active session time, and current active bitrate to keep you fully informed while on mobile data or Wi-Fi.
 * 🎚️ **Selectable Audio Quality Presets:** Fine-tune your bandwidth consumption with dedicated profiles ranging from **High Fidelity** (uncompressed soundstage) to **Balanced Cosmic** and **Data Saver** modes.
 * 🎛️ **Acoustic Equalizer & DSP Engine:** Advanced audio customization featuring dedicated cosmic presets (Cosmic Flat, Deep Space Bass, Starlight Treble, Nebula Chill, Vocal Orbit, and Cosmic Synth) alongside granular frequency calibration sliders.
+* 🎵 **Track & Station History:** Automatically logs songs played across the stations you listen to, letting you easily look back at past tracks and artists you've discovered.
+* ⏲️ **Built-In Sleep Timer:** Set customizable countdown timers to automatically fade out and stop playback, saving battery and data while you drift off to sleep.
 
 ---
 
