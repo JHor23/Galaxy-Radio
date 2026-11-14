@@ -100,4 +100,15 @@ class ExampleRobolectricTest {
     assertEquals("Solar Fields", history.artist)
     assertEquals(1700000000000L, history.playedAtTimestamp)
   }
+
+  @Test
+  fun `verify about menu and creator strings`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    assertEquals("About", context.getString(R.string.menu_about))
+    assertEquals("JHor", context.getString(R.string.about_creator_handle))
+    assertEquals("ABOUT ME", context.getString(R.string.about_me_heading))
+    assertEquals("https://ko-fi.com/jhor23", com.example.ui.components.CREATOR_KOFI_URL)
+    assertEquals("https://github.com/JHor23/Galaxy-Radio", com.example.ui.components.CREATOR_SOURCE_URL)
+    assertEquals("https://github.com/JHor23", com.example.ui.components.CREATOR_PROJECTS_URL)
+  }
 }

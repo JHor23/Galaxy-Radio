@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Speed
@@ -72,6 +73,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,6 +84,7 @@ import com.example.data.repository.SongHistoryRepository
 import com.example.model.RadioStation
 import com.example.player.PlayerUiState
 import com.example.player.RadioPlayerManager
+import com.example.ui.components.AboutCreatorModal
 import com.example.ui.components.AddStationBottomSheet
 import com.example.ui.components.FullscreenPlayerModal
 import com.example.ui.components.GalaxyStarfield
@@ -156,6 +159,7 @@ fun RadioAppMain(
     var isAddStationSheetOpen by remember { mutableStateOf(false) }
     var isSleepTimerDialogOpen by remember { mutableStateOf(false) }
     var isHistoryModalOpen by remember { mutableStateOf(false) }
+    var isAboutModalOpen by remember { mutableStateOf(false) }
     var historyStation by remember { mutableStateOf<RadioStation?>(null) }
 
     // Request notification permission for Android 13+ background playback controls
@@ -190,8 +194,9 @@ fun RadioAppMain(
     )
 
     // BackHandler to close player modal, sheet, or dialog before exiting
-    BackHandler(enabled = isHistoryModalOpen || isSleepTimerDialogOpen || isPlayerModalOpen || isAddStationSheetOpen || currentTab != 0) {
+    BackHandler(enabled = isAboutModalOpen || isHistoryModalOpen || isSleepTimerDialogOpen || isPlayerModalOpen || isAddStationSheetOpen || currentTab != 0) {
         when {
+            isAboutModalOpen -> isAboutModalOpen = false
             isHistoryModalOpen -> isHistoryModalOpen = false
             isSleepTimerDialogOpen -> isSleepTimerDialogOpen = false
             isPlayerModalOpen -> isPlayerModalOpen = false
@@ -218,7 +223,8 @@ fun RadioAppMain(
                     onOpenHistory = {
                         historyStation = playerState.currentStation
                         isHistoryModalOpen = true
-                    }
+                    },
+                    onOpenAbout = { isAboutModalOpen = true }
                 )
             },
             bottomBar = {
@@ -424,6 +430,17 @@ fun RadioAppMain(
                 onDismiss = { isHistoryModalOpen = false }
             )
         }
+
+        // About Creator Modal
+        AnimatedVisibility(
+            visible = isAboutModalOpen,
+            enter = slideInVertically(initialOffsetY = { it }),
+            exit = slideOutVertically(targetOffsetY = { it })
+        ) {
+            AboutCreatorModal(
+                onDismiss = { isAboutModalOpen = false }
+            )
+        }
     }
 }
 
@@ -433,7 +450,8 @@ fun GalaxyTopBar(
     onOpenAddStation: () -> Unit,
     onOpenPlayer: () -> Unit,
     onOpenSleepTimer: () -> Unit,
-    onOpenHistory: () -> Unit
+    onOpenHistory: () -> Unit,
+    onOpenAbout: () -> Unit
 ) {
     Surface(
         color = GalaxyDeep.copy(alpha = 0.95f),
@@ -674,6 +692,29 @@ fun GalaxyTopBar(
                                 onOpenAddStation()
                             },
                             modifier = Modifier.testTag("top_bar_add_station")
+                        )
+
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = stringResource(R.string.menu_about),
+                                    color = GalaxyTextPrimary,
+                                    fontSize = 14.sp
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Info,
+                                    contentDescription = null,
+                                    tint = GalaxyCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onOpenAbout()
+                            },
+                            modifier = Modifier.testTag("top_bar_about")
                         )
                     }
                 }

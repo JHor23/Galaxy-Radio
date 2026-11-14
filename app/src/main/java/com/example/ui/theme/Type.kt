@@ -2,9 +2,24 @@ package com.example.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.example.R
+
+val OrbitronFontFamily = FontFamily(
+  Font(R.font.orbitron, FontWeight.Normal),
+  Font(R.font.orbitron, FontWeight.Bold),
+  Font(R.font.orbitron, FontWeight.Black)
+)
+
+val PlusJakartaFontFamily = FontFamily(
+  Font(R.font.plus_jakarta_sans, FontWeight.Normal),
+  Font(R.font.plus_jakarta_sans, FontWeight.Medium),
+  Font(R.font.plus_jakarta_sans, FontWeight.SemiBold),
+  Font(R.font.plus_jakarta_sans, FontWeight.Bold)
+)
 
 // Set of Material typography styles to start with
 val Typography =
