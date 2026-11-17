@@ -4,11 +4,24 @@
     <string name="about_creator_handle">JHor</string>
     <string name="about_me_heading">ABOUT ME</string>
     <string name="about_avatar_cd">JHor cybernetic visor avatar</string>
-    <string name="about_bio_line_1">Hey there! I\u2019m an independent developer and server admin who loves vibe coding, useful mobile tools and media applications.</string>
-    <string name="about_bio_line_2">Whether I\u2019m building programs, vibing to music, or trolling the community, I\u2019m always looking for ways to improve our quality of life.</string>
+    <string name="about_bio_1_title">Not Your Average Dev:</string>
+    <string name="about_bio_1_body">Powered by caffeine, dad jokes, &amp; a healthy dose of Deadpool-style sarcasm.</string>
+    <string name="about_bio_2_title">Indie App Builder:</string>
+    <string name="about_bio_2_body">Crafting lightweight, bloat-free Android, PC, &amp; web based applications.</string>
+    <string name="about_bio_3_title">For The People:</string>
+    <string name="about_bio_3_body">Dedicated to open-source, free, &amp; user-controlled software.</string>
+    <string name="about_bio_4_title">Gaming Tinkerer:</string>
+    <string name="about_bio_4_body">Passionate about both modern titles &amp; retro emulation, bridging the gap across PC, handhelds, &amp; mobile.</string>
+    <string name="about_bio_5_title">Off the Clock:</string>
+    <string name="about_bio_5_body">Dad, Husband, Eagle Scout, Gamer, &amp; Hooper.</string>
     <string name="about_btn_kofi">SUPPORT ON KO-FI</string>
     <string name="about_btn_github">VIEW SOURCE (GITHUB)</string>
     <string name="about_btn_projects">CHECK OUT MY PROJECTS</string>
     <string name="about_footer_thanks">Thanks for the support!</string>
     <string name="about_close_cd">Close About page</string>
+    <string name="volume_control_label">Volume</string>
+    <string name="volume_mute_cd">Mute audio</string>
+    <string name="volume_unmute_cd">Unmute audio</string>
+    <string name="volume_slider_cd">Playback volume slider</string>
+    <string name="volume_toggle_panel_cd">Toggle volume slider</string>
 </resources>

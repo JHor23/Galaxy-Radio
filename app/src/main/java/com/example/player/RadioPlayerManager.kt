@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlin.math.roundToInt
 
 enum class PlayerStatus {
     IDLE,
@@ -29,9 +30,16 @@ data class PlayerUiState(
     val bytesStreamed: Long = 0L,
     val streamDurationSeconds: Long = 0L,
     val sleepTimerRemainingSeconds: Long? = null,
+    val volume: Float = 1.0f,
     val isMuted: Boolean = false,
     val errorMessage: String? = null
 ) {
+    val effectiveVolume: Float
+        get() = if (isMuted) 0f else volume.coerceIn(0f, 1f)
+
+    val volumePercent: Int
+        get() = (effectiveVolume * 100f).roundToInt()
+
     val isPlaying: Boolean
         get() = status == PlayerStatus.PLAYING
 
@@ -69,23 +77,24 @@ object RadioPlayerManager {
     private const val KEY_STATION_BITRATE = "last_station_bitrate"
     private const val KEY_STATION_IS_CUSTOM = "last_station_is_custom"
     private const val KEY_STATION_IS_FAVORITE = "last_station_is_favorite"
+    private const val KEY_VOLUME = "player_volume"
+    private const val KEY_IS_MUTED = "player_is_muted"
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
     fun init(context: Context) {
-        if (_uiState.value.currentStation == null) {
-            val restored = getPersistedStation(context)
-            if (restored != null) {
-                _uiState.update {
-                    it.copy(
-                        currentStation = restored,
-                        status = PlayerStatus.PAUSED,
-                        liveTrackTitle = restored.name,
-                        liveArtist = restored.genre
-                    )
-                }
-            }
+        val (savedVolume, savedMuted) = getPersistedVolumeState(context)
+        val restored = if (_uiState.value.currentStation == null) getPersistedStation(context) else null
+        _uiState.update { current ->
+            current.copy(
+                volume = savedVolume,
+                isMuted = savedMuted,
+                currentStation = current.currentStation ?: restored,
+                status = if (current.currentStation == null && restored != null) PlayerStatus.PAUSED else current.status,
+                liveTrackTitle = if (current.currentStation == null && restored != null) restored.name else current.liveTrackTitle,
+                liveArtist = if (current.currentStation == null && restored != null) restored.genre else current.liveArtist
+            )
         }
     }
 
@@ -221,18 +230,70 @@ object RadioPlayerManager {
     }
 
     fun toggleMute(context: Context) {
-        val intent = Intent(context, RadioPlaybackService::class.java).apply {
-            action = RadioPlaybackService.ACTION_MUTE_TOGGLE
+        val current = _uiState.value
+        val nextMuted = !current.isMuted
+        val nextVolume = if (!nextMuted && current.volume <= 0.01f) 0.5f else current.volume
+        applyVolumeInternal(context, nextVolume, nextMuted)
+    }
+
+    fun setVolume(context: Context, volume: Float) {
+        val clamped = volume.coerceIn(0f, 1f)
+        val isZero = clamped <= 0.005f
+        applyVolumeInternal(
+            context = context,
+            volume = if (isZero) 0f else clamped,
+            isMuted = isZero
+        )
+    }
+
+    fun adjustVolume(context: Context, delta: Float) {
+        val base = _uiState.value.effectiveVolume
+        setVolume(context, base + delta)
+    }
+
+    private fun applyVolumeInternal(context: Context, volume: Float, isMuted: Boolean) {
+        val clamped = volume.coerceIn(0f, 1f)
+        persistVolumeState(context, clamped, isMuted)
+        _uiState.update {
+            it.copy(
+                volume = clamped,
+                isMuted = isMuted
+            )
         }
-        startService(context, intent)
+    }
+
+    private fun persistVolumeState(context: Context, volume: Float, isMuted: Boolean) {
+        try {
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit()
+                .putFloat(KEY_VOLUME, volume)
+                .putBoolean(KEY_IS_MUTED, isMuted)
+                .apply()
+        } catch (_: Exception) {}
+    }
+
+    fun getPersistedVolumeState(context: Context): Pair<Float, Boolean> {
+        return try {
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val vol = prefs.getFloat(KEY_VOLUME, 1.0f).coerceIn(0f, 1f)
+            val muted = prefs.getBoolean(KEY_IS_MUTED, false)
+            vol to muted
+        } catch (_: Exception) {
+            1.0f to false
+        }
     }
 
     fun setQualityPreset(preset: AudioQualityPreset) {
         _uiState.update { it.copy(audioQuality = preset) }
     }
 
-    internal fun updateMuted(isMuted: Boolean) {
-        _uiState.update { it.copy(isMuted = isMuted) }
+    internal fun updateVolumeState(volume: Float, isMuted: Boolean) {
+        _uiState.update {
+            it.copy(
+                volume = volume.coerceIn(0f, 1f),
+                isMuted = isMuted
+            )
+        }
     }
 
     // Internal updates from service

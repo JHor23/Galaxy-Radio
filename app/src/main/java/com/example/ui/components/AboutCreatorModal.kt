@@ -58,8 +58,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.BuildConfig
@@ -79,8 +81,10 @@ private object AboutCardPalette {
     val HeaderDarkBottom = Color(0xFF0E1733)
     val FrostSurface = Color(0xFFF3F7FE)
     val FrostGrid = Color(0xFF8AA8D6)
+    val BioPanelSurface = Color(0xFFE7EFFC)
+    val BioPanelBorder = Color(0xFFC9DBF5)
     val DeepInk = Color(0xFF091338)
-    val BodyInk = Color(0xFF141E3B)
+    val BodyInk = Color(0xFF1A2547)
     val MutedInk = Color(0xFF475569)
     val KofiStart = Color(0xFF00B4A6)
     val KofiEnd = Color(0xFF007E8A)
@@ -120,7 +124,7 @@ fun AboutCreatorModal(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 14.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Top bar with Back / Close controls (48dp touch targets)
@@ -166,8 +170,6 @@ fun AboutCreatorModal(
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(6.dp))
 
             // Main Neon-Bordered Creator Card
             val outerGradient = Brush.linearGradient(
@@ -248,18 +250,18 @@ fun AboutCreatorModal(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(192.dp),
+                                .height(114.dp),
                             contentAlignment = Alignment.TopCenter
                         ) {
                             // Cybernetic dark top header canvas with notched transition
                             Canvas(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(142.dp)
+                                    .height(84.dp)
                             ) {
                                 val w = size.width
                                 val h = size.height
-                                val notchDrop = 26.dp.toPx()
+                                val notchDrop = 16.dp.toPx()
 
                                 val bannerPath = Path().apply {
                                     moveTo(0f, 0f)
@@ -339,8 +341,8 @@ fun AboutCreatorModal(
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .padding(top = 24.dp)
-                                    .size(160.dp)
+                                    .padding(top = 6.dp)
+                                    .size(104.dp)
                                     .drawBehind {
                                         drawCircle(
                                             brush = Brush.radialGradient(
@@ -366,11 +368,11 @@ fun AboutCreatorModal(
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(148.dp)
+                                        .size(96.dp)
                                         .clip(CircleShape)
                                         .background(AboutCardPalette.HeaderDarkTop)
-                                        .border(4.dp, avatarRingBrush, CircleShape)
-                                        .padding(3.dp)
+                                        .border(3.dp, avatarRingBrush, CircleShape)
+                                        .padding(2.dp)
                                 ) {
                                     Image(
                                         painter = painterResource(id = R.drawable.img_jhor_avatar),
@@ -389,8 +391,8 @@ fun AboutCreatorModal(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 22.dp)
-                                .padding(top = 2.dp, bottom = 20.dp),
+                                .padding(horizontal = 16.dp)
+                                .padding(top = 0.dp, bottom = 10.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             // "JHor" flanked by neon gradient bars
@@ -414,17 +416,17 @@ fun AboutCreatorModal(
                                 Text(
                                     text = stringResource(R.string.about_creator_handle),
                                     fontFamily = OrbitronFontFamily,
-                                    fontSize = 34.sp,
+                                    fontSize = 24.sp,
                                     fontWeight = FontWeight.Black,
                                     letterSpacing = 2.sp,
                                     color = AboutCardPalette.DeepInk,
                                     modifier = Modifier.testTag("about_creator_handle")
                                 )
-                                Spacer(modifier = Modifier.width(14.dp))
+                                Spacer(modifier = Modifier.width(12.dp))
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(4.dp)
+                                        .height(3.5.dp)
                                         .clip(CircleShape)
                                         .background(
                                             Brush.horizontalGradient(
@@ -434,7 +436,7 @@ fun AboutCreatorModal(
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
 
                             // Center Ring Node Cyber Divider
                             Row(
@@ -456,16 +458,16 @@ fun AboutCreatorModal(
                                 Canvas(
                                     modifier = Modifier
                                         .padding(horizontal = 8.dp)
-                                        .size(16.dp)
+                                        .size(10.dp)
                                 ) {
                                     drawCircle(
                                         color = AboutCardPalette.DeepInk,
-                                        radius = size.minDimension / 2f - 2.dp.toPx(),
-                                        style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
+                                        radius = size.minDimension / 2f - 1.5.dp.toPx(),
+                                        style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
                                     )
                                     drawCircle(
                                         color = GalaxyElectricBlue,
-                                        radius = 2.5.dp.toPx()
+                                        radius = 1.8.dp.toPx()
                                     )
                                 }
                                 Box(
@@ -480,44 +482,53 @@ fun AboutCreatorModal(
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
 
                             // "ABOUT ME" Title
                             Text(
                                 text = stringResource(R.string.about_me_heading),
                                 fontFamily = OrbitronFontFamily,
-                                fontSize = 21.sp,
+                                fontSize = 15.5.sp,
                                 fontWeight = FontWeight.Black,
-                                letterSpacing = 2.5.sp,
+                                letterSpacing = 2.sp,
                                 color = AboutCardPalette.DeepInk
                             )
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
 
-                            // Bio Paragraphs
-                            Text(
-                                text = stringResource(R.string.about_bio_line_1),
-                                fontFamily = PlusJakartaFontFamily,
-                                fontSize = 14.5.sp,
-                                fontWeight = FontWeight.Medium,
-                                lineHeight = 21.sp,
-                                color = AboutCardPalette.BodyInk,
-                                textAlign = TextAlign.Center
+                            // Styled Bio Highlights Card
+                            val bioEntries = listOf(
+                                stringResource(R.string.about_bio_1_title) to stringResource(R.string.about_bio_1_body),
+                                stringResource(R.string.about_bio_2_title) to stringResource(R.string.about_bio_2_body),
+                                stringResource(R.string.about_bio_3_title) to stringResource(R.string.about_bio_3_body),
+                                stringResource(R.string.about_bio_4_title) to stringResource(R.string.about_bio_4_body),
+                                stringResource(R.string.about_bio_5_title) to stringResource(R.string.about_bio_5_body)
                             )
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = AboutCardPalette.BioPanelSurface.copy(alpha = 0.85f),
+                                border = BorderStroke(1.dp, AboutCardPalette.BioPanelBorder),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("about_bio_card")
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    bioEntries.forEachIndexed { index, (title, body) ->
+                                        AboutBioBulletRow(
+                                            title = title,
+                                            body = body,
+                                            accentColor = if (index % 2 == 0) GalaxyElectricBlue else GalaxyViolet
+                                        )
+                                    }
+                                }
+                            }
 
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Text(
-                                text = stringResource(R.string.about_bio_line_2),
-                                fontFamily = PlusJakartaFontFamily,
-                                fontSize = 14.5.sp,
-                                fontWeight = FontWeight.Medium,
-                                lineHeight = 21.sp,
-                                color = AboutCardPalette.BodyInk,
-                                textAlign = TextAlign.Center
-                            )
-
-                            Spacer(modifier = Modifier.height(18.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
 
                             // 3 Direct Link Pill Buttons
                             AboutPillButton(
@@ -531,7 +542,7 @@ fun AboutCreatorModal(
                                 onClick = { openExternalUrl(context, CREATOR_KOFI_URL) }
                             )
 
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
 
                             AboutPillButton(
                                 label = stringResource(R.string.about_btn_github),
@@ -544,7 +555,7 @@ fun AboutCreatorModal(
                                 onClick = { openExternalUrl(context, CREATOR_SOURCE_URL) }
                             )
 
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
 
                             AboutPillButton(
                                 label = stringResource(R.string.about_btn_projects),
@@ -557,7 +568,7 @@ fun AboutCreatorModal(
                                 onClick = { openExternalUrl(context, CREATOR_PROJECTS_URL) }
                             )
 
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
 
                             // Version Footer
                             Row(
@@ -567,22 +578,22 @@ fun AboutCreatorModal(
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .width(26.dp)
+                                        .width(24.dp)
                                         .height(2.dp)
                                         .background(GalaxyCyan)
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = "v${BuildConfig.VERSION_NAME} | ${stringResource(R.string.about_footer_thanks)}",
                                     fontFamily = PlusJakartaFontFamily,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = AboutCardPalette.MutedInk
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Box(
                                     modifier = Modifier
-                                        .width(26.dp)
+                                        .width(24.dp)
                                         .height(2.dp)
                                         .background(GalaxyViolet)
                                 )
@@ -592,8 +603,52 @@ fun AboutCreatorModal(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(4.dp))
         }
+    }
+}
+
+@Composable
+private fun AboutBioBulletRow(
+    title: String,
+    body: String,
+    accentColor: Color
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 5.dp)
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(accentColor)
+        )
+        Spacer(modifier = Modifier.width(7.dp))
+        Text(
+            text = buildAnnotatedString {
+                withStyle(
+                    SpanStyle(
+                        fontWeight = FontWeight.ExtraBold,
+                        color = AboutCardPalette.DeepInk
+                    )
+                ) {
+                    append("$title ")
+                }
+                withStyle(
+                    SpanStyle(
+                        fontWeight = FontWeight.Medium,
+                        color = AboutCardPalette.BodyInk
+                    )
+                ) {
+                    append(body)
+                }
+            },
+            fontFamily = PlusJakartaFontFamily,
+            fontSize = 11.5.sp,
+            lineHeight = 14.5.sp
+        )
     }
 }
 
@@ -611,7 +666,7 @@ private fun AboutPillButton(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 50.dp)
+            .heightIn(min = 48.dp)
             .clip(CircleShape)
             .background(
                 Brush.horizontalGradient(
@@ -620,7 +675,7 @@ private fun AboutPillButton(
             )
             .border(1.5.dp, borderColor, CircleShape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 12.dp)
+            .padding(horizontal = 16.dp, vertical = 9.dp)
             .testTag(testTag),
         contentAlignment = Alignment.Center
     ) {
@@ -631,7 +686,7 @@ private fun AboutPillButton(
             Text(
                 text = label,
                 fontFamily = PlusJakartaFontFamily,
-                fontSize = 14.sp,
+                fontSize = 13.5.sp,
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = 0.8.sp,
                 color = Color.White
@@ -639,7 +694,7 @@ private fun AboutPillButton(
             Spacer(modifier = Modifier.width(10.dp))
             Box(
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(26.dp)
                     .clip(CircleShape)
                     .background(Color.White),
                 contentAlignment = Alignment.Center

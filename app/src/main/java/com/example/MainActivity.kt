@@ -14,6 +14,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -69,10 +70,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -237,7 +241,9 @@ fun RadioAppMain(
                             playerState = playerState,
                             onExpand = { isPlayerModalOpen = true },
                             onTogglePlayPause = { RadioPlayerManager.togglePlayPause(context) },
-                            onStop = { RadioPlayerManager.stop(context) }
+                            onStop = { RadioPlayerManager.stop(context) },
+                            onVolumeChange = { RadioPlayerManager.setVolume(context, it) },
+                            onToggleMute = { RadioPlayerManager.toggleMute(context) }
                         )
                     }
 
@@ -320,7 +326,10 @@ fun RadioAppMain(
                         }
                     )
                     1 -> EqualizerScreen(
-                        equalizerManager = equalizerManager
+                        equalizerManager = equalizerManager,
+                        playerState = playerState,
+                        onVolumeChange = { RadioPlayerManager.setVolume(context, it) },
+                        onToggleMute = { RadioPlayerManager.toggleMute(context) }
                     )
                     2 -> SavedStationsScreen(
                         repository = repository,
@@ -473,18 +482,20 @@ fun GalaxyTopBar(
             ) {
                 Surface(
                     shape = CircleShape,
-                    color = GalaxyCyan.copy(alpha = 0.15f),
+                    color = GalaxyVoid,
                     border = BorderStroke(1.dp, GalaxyCyan),
-                    modifier = Modifier.size(34.dp)
+                    modifier = Modifier.size(36.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Filled.Radio,
-                            contentDescription = null,
-                            tint = GalaxyCyan,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                    Image(
+                        painter = painterResource(id = R.drawable.galaxy_radio_icon),
+                        contentDescription = stringResource(R.string.app_name),
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                            .scale(1.18f)
+                            .testTag("top_bar_app_logo")
+                    )
                 }
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {

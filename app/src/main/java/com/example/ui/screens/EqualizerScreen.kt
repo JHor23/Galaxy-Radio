@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.audio.EqualizerManager
 import com.example.model.EqPresetType
+import com.example.player.PlayerUiState
+import com.example.ui.components.GalaxyVolumeSlider
 import com.example.ui.theme.GalaxyCardBorder
 import com.example.ui.theme.GalaxyCyan
 import com.example.ui.theme.GalaxyElectricBlue
@@ -62,6 +64,9 @@ import com.example.ui.theme.GalaxyVoid
 @Composable
 fun EqualizerScreen(
     equalizerManager: EqualizerManager,
+    playerState: PlayerUiState,
+    onVolumeChange: (Float) -> Unit,
+    onToggleMute: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by equalizerManager.state.collectAsState()
@@ -130,6 +135,25 @@ fun EqualizerScreen(
                 )
             }
         }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Master Output Volume Slider
+        Text(
+            text = "Master Output Volume",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = GalaxyTextSecondary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        GalaxyVolumeSlider(
+            volume = playerState.volume,
+            isMuted = playerState.isMuted,
+            onVolumeChange = onVolumeChange,
+            onToggleMute = onToggleMute,
+            showCardContainer = true,
+            testTagPrefix = "equalizer_volume"
+        )
 
         Spacer(modifier = Modifier.height(18.dp))
 

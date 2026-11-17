@@ -25,6 +25,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeDown
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.ContentCopy
@@ -39,8 +41,6 @@ import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -550,6 +550,12 @@ fun FullscreenPlayerModal(
                 }
 
                 // Mute / Unmute Volume Action
+                val isEffectivelyMuted = playerState.isMuted || playerState.effectiveVolume <= 0.005f
+                val transportVolumeIcon = when {
+                    isEffectivelyMuted -> Icons.AutoMirrored.Filled.VolumeOff
+                    playerState.effectiveVolume < 0.5f -> Icons.AutoMirrored.Filled.VolumeDown
+                    else -> Icons.AutoMirrored.Filled.VolumeUp
+                }
                 IconButton(
                     onClick = { com.example.player.RadioPlayerManager.toggleMute(context) },
                     modifier = Modifier
@@ -559,14 +565,14 @@ fun FullscreenPlayerModal(
                     Surface(
                         shape = CircleShape,
                         color = GalaxySurfaceVariant,
-                        border = BorderStroke(1.dp, if (playerState.isMuted) GalaxyCyan else GalaxyCardBorder),
+                        border = BorderStroke(1.dp, if (isEffectivelyMuted) GalaxyCyan else GalaxyCardBorder),
                         modifier = Modifier.size(42.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
-                                imageVector = if (playerState.isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
-                                contentDescription = if (playerState.isMuted) "Unmute" else "Mute",
-                                tint = if (playerState.isMuted) GalaxyCyan else GalaxyTextSecondary,
+                                imageVector = transportVolumeIcon,
+                                contentDescription = if (isEffectivelyMuted) "Unmute" else "Mute",
+                                tint = if (isEffectivelyMuted) GalaxyCyan else GalaxyTextSecondary,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -575,6 +581,22 @@ fun FullscreenPlayerModal(
             }
 
             Spacer(modifier = Modifier.height(14.dp))
+
+            // Continuous Playback Volume Slider
+            GalaxyVolumeSlider(
+                volume = playerState.volume,
+                isMuted = playerState.isMuted,
+                onVolumeChange = { newVolume ->
+                    com.example.player.RadioPlayerManager.setVolume(context, newVolume)
+                },
+                onToggleMute = {
+                    com.example.player.RadioPlayerManager.toggleMute(context)
+                },
+                showCardContainer = false,
+                testTagPrefix = "fullscreen_volume"
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Equalizer Shortcut Row
             Row(
@@ -611,7 +633,7 @@ fun FullscreenPlayerModal(
                 }
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             // Quick Jump Action Cards
             Row(

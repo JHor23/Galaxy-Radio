@@ -47,9 +47,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 class RadioPlaybackService : Service() {
 
@@ -58,6 +61,8 @@ class RadioPlaybackService : Service() {
     private var metadataJob: Job? = null
     private var statsJob: Job? = null
     private var reconnectJob: Job? = null
+    private var volumeObserverJob: Job? = null
+    private var notificationUpdateJob: Job? = null
 
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSessionCompat? = null
@@ -76,9 +81,12 @@ class RadioPlaybackService : Service() {
     private var currentArtist: String = ""
     private var sessionStartTimeMs: Long = 0L
     private var estimatedBytesTransferred: Long = 0L
+    private var volumeLevel: Float = 1.0f
     private var isMuted: Boolean = false
     private var cachedThumbnailIcon: Bitmap? = null
     private var songHistoryRepository: SongHistoryRepository? = null
+
+    private fun effectiveVolume(): Float = if (isMuted) 0f else volumeLevel.coerceIn(0f, 1f)
 
     override fun onCreate() {
         super.onCreate()
@@ -101,9 +109,15 @@ class RadioPlaybackService : Service() {
         checkInitialNetwork()
         registerNetworkCallback()
 
+        val (savedVol, savedMute) = RadioPlayerManager.getPersistedVolumeState(applicationContext)
+        volumeLevel = savedVol
+        isMuted = savedMute
+        RadioPlayerManager.init(applicationContext)
+
         initializeMediaSession()
         initializePlayer()
         observeSleepTimer()
+        observeVolumeChanges()
 
         // Restore saved station metadata if available to prevent blank states after process death
         try {
@@ -251,8 +265,20 @@ class RadioPlaybackService : Service() {
                     }
 
                     override fun onCustomAction(action: String?, extras: Bundle?) {
-                        if (action == ACTION_MUTE_TOGGLE) {
-                            toggleMute()
+                        when (action) {
+                            ACTION_MUTE_TOGGLE -> {
+                                RadioPlayerManager.toggleMute(this@RadioPlaybackService)
+                            }
+                            ACTION_VOLUME_DOWN -> {
+                                RadioPlayerManager.adjustVolume(this@RadioPlaybackService, -VOLUME_STEP)
+                            }
+                            ACTION_VOLUME_UP -> {
+                                RadioPlayerManager.adjustVolume(this@RadioPlaybackService, VOLUME_STEP)
+                            }
+                            ACTION_SET_VOLUME -> {
+                                val target = extras?.getFloat(EXTRA_VOLUME, volumeLevel) ?: volumeLevel
+                                RadioPlayerManager.setVolume(this@RadioPlaybackService, target)
+                            }
                         }
                     }
                 })
@@ -301,7 +327,7 @@ class RadioPlaybackService : Service() {
             .build()
             .apply {
                 addListener(playerListener)
-                volume = if (isMuted) 0f else 1f
+                volume = effectiveVolume()
             }
     }
 
@@ -451,15 +477,29 @@ class RadioPlaybackService : Service() {
                 PlaybackStateCompat.ACTION_SET_PLAYBACK_SPEED
 
         try {
+            val volDownAction = PlaybackStateCompat.CustomAction.Builder(
+                ACTION_VOLUME_DOWN,
+                "Vol -",
+                R.drawable.ic_volume_down
+            ).build()
+
+            val volUpAction = PlaybackStateCompat.CustomAction.Builder(
+                ACTION_VOLUME_UP,
+                "Vol +",
+                R.drawable.ic_volume_up
+            ).build()
+
             val customMuteAction = PlaybackStateCompat.CustomAction.Builder(
                 ACTION_MUTE_TOGGLE,
                 if (isMuted) "Unmute" else "Mute",
-                if (isMuted) android.R.drawable.ic_lock_silent_mode else android.R.drawable.ic_lock_silent_mode_off
+                if (isMuted) R.drawable.ic_volume_off else R.drawable.ic_volume_up
             ).build()
 
             mediaSession?.setPlaybackState(
                 PlaybackStateCompat.Builder()
                     .setActions(actions)
+                    .addCustomAction(volDownAction)
+                    .addCustomAction(volUpAction)
                     .addCustomAction(customMuteAction)
                     .setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 1.0f)
                     .build()
@@ -544,7 +584,21 @@ class RadioPlaybackService : Service() {
                 RadioPlayerManager.playPrevious(this)
             }
             ACTION_MUTE_TOGGLE -> {
-                toggleMute()
+                RadioPlayerManager.toggleMute(this)
+                updateNotification()
+            }
+            ACTION_VOLUME_DOWN -> {
+                RadioPlayerManager.adjustVolume(this, -VOLUME_STEP)
+                updateNotification()
+            }
+            ACTION_VOLUME_UP -> {
+                RadioPlayerManager.adjustVolume(this, VOLUME_STEP)
+                updateNotification()
+            }
+            ACTION_SET_VOLUME -> {
+                val targetVol = intent.getFloatExtra(EXTRA_VOLUME, volumeLevel)
+                RadioPlayerManager.setVolume(this, targetVol)
+                updateNotification()
             }
             ACTION_STOP -> {
                 wasPlayingBeforeNetworkLoss = false
@@ -557,14 +611,38 @@ class RadioPlaybackService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun toggleMute() {
-        isMuted = !isMuted
-        player?.volume = if (isMuted) 0f else 1f
-        RadioPlayerManager.updateMuted(isMuted)
-        updateMediaSessionState(
-            if (player?.isPlaying == true) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
-        )
-        updateNotification()
+    private fun observeVolumeChanges() {
+        volumeObserverJob?.cancel()
+        volumeObserverJob = serviceScope.launch {
+            RadioPlayerManager.uiState
+                .map { Triple(it.volume, it.isMuted, it.effectiveVolume) }
+                .distinctUntilChanged()
+                .collect { (vol, muted, effective) ->
+                    val changed = kotlin.math.abs(vol - volumeLevel) > 0.005f || muted != isMuted
+                    volumeLevel = vol
+                    isMuted = muted
+                    player?.volume = effective
+                    if (changed) {
+                        val sessionState = when {
+                            player?.isPlaying == true -> PlaybackStateCompat.STATE_PLAYING
+                            player?.playbackState == Player.STATE_BUFFERING -> PlaybackStateCompat.STATE_BUFFERING
+                            else -> PlaybackStateCompat.STATE_PAUSED
+                        }
+                        updateMediaSessionState(sessionState)
+                        scheduleNotificationVolumeRefresh()
+                    }
+                }
+        }
+    }
+
+    private fun scheduleNotificationVolumeRefresh() {
+        notificationUpdateJob?.cancel()
+        notificationUpdateJob = serviceScope.launch {
+            delay(100)
+            if (currentUrl.isNotBlank()) {
+                updateNotification()
+            }
+        }
     }
 
     private fun startStreaming(url: String, name: String, genre: String) {
@@ -830,10 +908,17 @@ class RadioPlaybackService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val muteActionIntent = PendingIntent.getService(
+        val volDownActionIntent = PendingIntent.getService(
             this,
-            12,
-            Intent(this, RadioPlaybackService::class.java).apply { action = ACTION_MUTE_TOGGLE },
+            13,
+            Intent(this, RadioPlaybackService::class.java).apply { action = ACTION_VOLUME_DOWN },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val volUpActionIntent = PendingIntent.getService(
+            this,
+            14,
+            Intent(this, RadioPlaybackService::class.java).apply { action = ACTION_VOLUME_UP },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
@@ -859,12 +944,15 @@ class RadioPlaybackService : Service() {
             " • ⏳ Sleep in $sleepFormatted"
         } else ""
 
-        val muteNotice = if (isMuted) " • 🔇 Muted" else ""
+        val effectiveVol = effectiveVolume()
+        val volPercent = (effectiveVol * 100f).roundToInt()
+        val isEffectivelyMuted = isMuted || volPercent == 0
+        val volumeGauge = formatVolumeNotificationGauge(volPercent, isEffectivelyMuted)
 
         val subText = if (isTimerActive) {
-            "Sleep Timer • ⏳ $sleepFormatted"
+            "Sleep $sleepFormatted • ${if (isEffectivelyMuted) "Muted" else "Vol $volPercent%"}"
         } else {
-            "Live Stream"
+            "Live Stream • ${if (isEffectivelyMuted) "Muted" else "Vol $volPercent%"}"
         }
 
         val iconBitmap = getThumbnailIcon()
@@ -883,8 +971,9 @@ class RadioPlaybackService : Service() {
                 }
             }
             .setContentTitle(title)
-            .setContentText("$subtitle$sleepNotice$muteNotice")
+            .setContentText("$subtitle$sleepNotice • $volumeGauge")
             .setSubText(subText)
+            .setProgress(100, volPercent, false)
             .setContentIntent(contentIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
@@ -925,17 +1014,17 @@ class RadioPlaybackService : Service() {
                 "Next",
                 nextActionIntent
             )
-            // Action 3: Volume Mute / Unmute
+            // Action 3: Volume Down (-10%)
             .addAction(
-                if (isMuted) android.R.drawable.ic_lock_silent_mode else android.R.drawable.ic_lock_silent_mode_off,
-                if (isMuted) "Unmute" else "Mute",
-                muteActionIntent
+                R.drawable.ic_volume_down,
+                "Vol -",
+                volDownActionIntent
             )
-            // Action 4: Stop
+            // Action 4: Volume Up (+10%)
             .addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
-                "Stop",
-                stopActionIntent
+                R.drawable.ic_volume_up,
+                "Vol +",
+                volUpActionIntent
             )
             .setStyle(mediaStyle)
             .build()
@@ -999,9 +1088,25 @@ class RadioPlaybackService : Service() {
         const val ACTION_NEXT = "com.example.ACTION_NEXT"
         const val ACTION_PREVIOUS = "com.example.ACTION_PREVIOUS"
         const val ACTION_MUTE_TOGGLE = "com.example.ACTION_MUTE_TOGGLE"
+        const val ACTION_SET_VOLUME = "com.example.ACTION_SET_VOLUME"
+        const val ACTION_VOLUME_UP = "com.example.ACTION_VOLUME_UP"
+        const val ACTION_VOLUME_DOWN = "com.example.ACTION_VOLUME_DOWN"
 
         const val EXTRA_STREAM_URL = "extra_stream_url"
         const val EXTRA_STATION_NAME = "extra_station_name"
         const val EXTRA_STATION_GENRE = "extra_station_genre"
+        const val EXTRA_VOLUME = "extra_volume"
+
+        private const val VOLUME_STEP = 0.10f
+
+        fun formatVolumeNotificationGauge(volumePercent: Int, isMuted: Boolean): String {
+            if (isMuted || volumePercent <= 0) {
+                return "🔇 Muted [──────────]"
+            }
+            val filledSegments = ((volumePercent.coerceIn(0, 100) + 5) / 10).coerceIn(0, 10)
+            val bar = "━".repeat(filledSegments) + "─".repeat(10 - filledSegments)
+            val icon = if (volumePercent < 50) "🔉" else "🔊"
+            return "$icon $volumePercent% [$bar]"
+        }
     }
 }

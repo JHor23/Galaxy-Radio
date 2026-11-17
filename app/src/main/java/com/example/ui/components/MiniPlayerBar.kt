@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -14,6 +15,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeDown
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -24,15 +28,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.player.PlayerUiState
 import com.example.ui.theme.GalaxyCyan
 import com.example.ui.theme.GalaxyElectricBlue
@@ -47,9 +56,19 @@ fun MiniPlayerBar(
     onExpand: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onStop: () -> Unit,
+    onVolumeChange: (Float) -> Unit,
+    onToggleMute: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val station = playerState.currentStation ?: return
+    var showVolumeSlider by remember { mutableStateOf(false) }
+
+    val isEffectivelyMuted = playerState.isMuted || playerState.effectiveVolume <= 0.005f
+    val volumeIcon = when {
+        isEffectivelyMuted -> Icons.AutoMirrored.Filled.VolumeOff
+        playerState.effectiveVolume < 0.5f -> Icons.AutoMirrored.Filled.VolumeDown
+        else -> Icons.AutoMirrored.Filled.VolumeUp
+    }
 
     Surface(
         modifier = modifier
@@ -62,12 +81,13 @@ fun MiniPlayerBar(
         border = BorderStroke(1.dp, GalaxyCyan.copy(alpha = 0.45f)),
         tonalElevation = 8.dp
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
             // Animated Visualizer or Pulsing Ring
             Box(
                 modifier = Modifier
@@ -153,7 +173,24 @@ fun MiniPlayerBar(
                 }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Expandable Volume Slider Toggle
+            IconButton(
+                onClick = { showVolumeSlider = !showVolumeSlider },
+                modifier = Modifier
+                    .size(40.dp)
+                    .testTag("mini_player_volume_toggle")
+            ) {
+                Icon(
+                    imageVector = volumeIcon,
+                    contentDescription = stringResource(R.string.volume_toggle_panel_cd),
+                    tint = if (showVolumeSlider || isEffectivelyMuted) GalaxyCyan else GalaxyTextSecondary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(2.dp))
 
             // Play / Pause / Buffering Action
             Surface(
@@ -197,6 +234,22 @@ fun MiniPlayerBar(
                     contentDescription = "Stop stream",
                     tint = GalaxyTextSecondary,
                     modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+            AnimatedVisibility(visible = showVolumeSlider) {
+                GalaxyVolumeSlider(
+                    volume = playerState.volume,
+                    isMuted = playerState.isMuted,
+                    onVolumeChange = onVolumeChange,
+                    onToggleMute = onToggleMute,
+                    showCardContainer = false,
+                    compact = true,
+                    testTagPrefix = "mini_player_volume",
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 8.dp)
                 )
             }
         }
